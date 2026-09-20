@@ -139,11 +139,13 @@ export class Board {
     return output;
   }
 
-  /** Grava `code` como main.py e reinicia a placa para executá-lo. */
-  async uploadMain(code: string): Promise<void> {
+  /** Grava `code` como main.py (e arquivos extras, ex.: bibliotecas) e reinicia a placa. */
+  async uploadMain(code: string, extraFiles: Record<string, string> = {}): Promise<void> {
     await this.enterRawRepl();
-    const literal = JSON.stringify(code); // literal JSON é um literal Python válido
-    await this.execRaw(`with open('main.py', 'w') as f:\n    f.write(${literal})\n`);
+    for (const [name, content] of Object.entries({ ...extraFiles, "main.py": code })) {
+      const literal = JSON.stringify(content); // literal JSON é um literal Python válido
+      await this.execRaw(`with open(${JSON.stringify(name)}, 'w') as f:\n    f.write(${literal})\n`);
+    }
     await this.exitRawRepl();
     await sleep(50);
     await this.write("\x04"); // soft reset -> roda main.py

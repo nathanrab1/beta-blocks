@@ -5,7 +5,7 @@
     "moduleResolution": "bundler",
     "strict": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["w3c-web-serial"],
+    "types": ["w3c-web-serial", "vite/client"],
     "skipLibCheck": true,
     "noEmit": true
   },

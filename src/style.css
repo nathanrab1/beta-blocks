@@ -99,6 +99,7 @@ body {
 
 .monitor { padding: 10px 12px; border-bottom: 1px solid var(--border); background: #fafbfc; }
 .monitor h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.monitor-rate { float: right; font-weight: normal; text-transform: none; letter-spacing: 0; }
 .monitor-cards { display: flex; flex-direction: column; gap: 6px; }
 .mcard {
   display: grid; grid-template-columns: 70px 1fr 52px; align-items: center; gap: 10px;
@@ -106,7 +107,7 @@ body {
 }
 .mcard .mlabel { font-weight: 600; }
 .mcard .mbar { height: 8px; border-radius: 4px; background: #e9ecf1; overflow: hidden; }
-.mcard .mbar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.15s; }
+.mcard .mbar > i { display: block; height: 100%; width: 0; background: var(--accent);  }
 .mcard .mvalue { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 .mcard .mdot { width: 14px; height: 14px; border-radius: 50%; background: #d0d4db; justify-self: start; }
 .mcard.on .mdot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }

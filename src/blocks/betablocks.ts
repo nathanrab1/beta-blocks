@@ -6,6 +6,7 @@ const TIME_COLOUR = 40;
 const CONTROL_COLOUR = 120;
 const PORT_COLOUR = 200;
 const INPUT_COLOUR = 160;
+const OLED_COLOUR = 260;
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
 const NAMED_COLORS: Record<string, [number, number, number]> = {
@@ -190,6 +191,51 @@ export function defineBlocks(): void {
       tooltip: "Mostra o valor no Console do Beta Blocks.",
     },
     {
+      type: "oled_config",
+      message0: "visor OLED %1  SDA %2  SCL %3",
+      args0: [
+        {
+          type: "field_dropdown",
+          name: "SIZE",
+          options: [
+            ["128x64", "128x64"],
+            ["128x32", "128x32"],
+          ],
+        },
+        { type: "field_number", name: "SDA", value: 8, min: 0, max: 48, precision: 1 },
+        { type: "field_number", name: "SCL", value: 9, min: 0, max: 48, precision: 1 },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: OLED_COLOUR,
+      tooltip: "Liga o visor OLED I2C nos pinos escolhidos. Use uma vez, no começo do programa.",
+    },
+    {
+      type: "oled_text",
+      message0: "mostrar no visor %1 na linha %2",
+      args0: [
+        { type: "input_value", name: "TEXT" },
+        {
+          type: "field_dropdown",
+          name: "LINE",
+          options: [["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"], ["6", "6"], ["7", "7"], ["8", "8"]],
+        },
+      ],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: OLED_COLOUR,
+      tooltip: "Escreve um texto (ou número) numa linha do visor. 128x64 tem 8 linhas; 128x32 tem 4.",
+    },
+    {
+      type: "oled_clear",
+      message0: "limpar visor",
+      previousStatement: null,
+      nextStatement: null,
+      colour: OLED_COLOUR,
+      tooltip: "Apaga tudo que está no visor.",
+    },
+    {
       type: "forever",
       message0: "repetir para sempre %1 %2",
       args0: [
@@ -266,6 +312,18 @@ export function defineBlocks(): void {
     return `print(${v})\n`;
   };
 
+  pythonGenerator.forBlock["oled_config"] = (block) => {
+    const [w, h] = block.getFieldValue("SIZE").split("x");
+    return `visor_iniciar(${block.getFieldValue("SDA")}, ${block.getFieldValue("SCL")}, ${w}, ${h})\n`;
+  };
+
+  pythonGenerator.forBlock["oled_text"] = (block, gen) => {
+    const text = gen.valueToCode(block, "TEXT", Order.NONE) || "''";
+    return `visor_texto(${text}, ${block.getFieldValue("LINE")})\n`;
+  };
+
+  pythonGenerator.forBlock["oled_clear"] = () => "visor_limpar()\n";
+
   pythonGenerator.forBlock["forever"] = (block, gen) => {
     const branch = gen.statementToCode(block, "DO") || gen.PASS;
     return `while True:\n${branch}`;
@@ -336,7 +394,7 @@ export function collectInputPins(workspace: Blockly.Workspace): InputPins {
 export const MONITOR_MARK = "\x1e";
 
 /**
- * Código que envia os valores das entradas pela serial 4x por segundo,
+ * Código que envia os valores das entradas pela serial 10x por segundo,
  * em segundo plano (Timer), sem atrapalhar o programa principal.
  */
 export function monitorCode(pins: InputPins): string {
@@ -360,7 +418,51 @@ export function monitorCode(pins: InputPins): string {
     "except NameError:",
     "    pass",
     "_bb_timer = Timer(3)",
-    "_bb_timer.init(period=250, mode=Timer.PERIODIC, callback=_monitor)",
+    "_bb_timer.init(period=100, mode=Timer.PERIODIC, callback=_monitor)",
+    "",
+    "",
+  ].join("\n");
+}
+
+const OLED_BLOCK_TYPES = ["oled_config", "oled_text", "oled_clear"];
+
+export function usesOled(workspace: Blockly.Workspace): boolean {
+  return workspace.getAllBlocks(false).some((b) => OLED_BLOCK_TYPES.includes(b.type));
+}
+
+/** Funções auxiliares do visor OLED (precisa do arquivo ssd1306.py na placa). */
+export function oledCode(): string {
+  return [
+    "# --- visor OLED ---",
+    "from machine import SoftI2C",
+    "import ssd1306",
+    "",
+    "oled = None",
+    "",
+    "def visor_iniciar(sda, scl, w, h):",
+    "    global oled",
+    "    try:",
+    "        i2c = SoftI2C(sda=Pin(sda), scl=Pin(scl), freq=400000)",
+    "        addrs = i2c.scan()",
+    "        addr = 0x3C if (0x3C in addrs or not addrs) else addrs[0]",
+    "        oled = ssd1306.SSD1306_I2C(w, h, i2c, addr=addr)",
+    "    except Exception as e:",
+    "        oled = None",
+    "        print('Visor OLED nao encontrado:', e)",
+    "",
+    "def visor_texto(txt, linha):",
+    "    if oled is None:",
+    "        return",
+    "    y = (int(linha) - 1) * 8",
+    "    oled.fill_rect(0, y, oled.width, 8, 0)",
+    "    oled.text(str(txt), 0, y, 1)",
+    "    oled.show()",
+    "",
+    "def visor_limpar():",
+    "    if oled is None:",
+    "        return",
+    "    oled.fill(0)",
+    "    oled.show()",
     "",
     "",
   ].join("\n");
@@ -422,6 +524,20 @@ export const toolbox = {
         { kind: "block", type: "input_digital" },
         { kind: "block", type: "input_analog" },
         { kind: "block", type: "show_value" },
+      ],
+    },
+    {
+      kind: "category",
+      name: "Visor",
+      colour: OLED_COLOUR,
+      contents: [
+        { kind: "block", type: "oled_config" },
+        {
+          kind: "block",
+          type: "oled_text",
+          inputs: { TEXT: { shadow: { type: "text", fields: { TEXT: "Ola!" } } } },
+        },
+        { kind: "block", type: "oled_clear" },
       ],
     },
     {

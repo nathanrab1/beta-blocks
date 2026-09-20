@@ -9,8 +9,11 @@ import {
   collectInputPins,
   monitorCode,
   MONITOR_MARK,
+  usesOled,
+  oledCode,
   type InputPins,
 } from "./blocks/betablocks";
+import ssd1306Source from "./lib/ssd1306.py?raw";
 import { Board, ReplError } from "./serial/board";
 import { flashMicroPython, loadFirmware } from "./serial/flasher";
 
@@ -100,6 +103,7 @@ const workspace = Blockly.inject("blockly-div", {
 function generateCode(): string {
   return (
     preamble(currentPin()) +
+    (usesOled(workspace) ? oledCode() : "") +
     monitorCode(collectInputPins(workspace)) +
     pythonGenerator.workspaceToCode(workspace)
   );
@@ -175,6 +179,26 @@ function clearMonitorCards() {
   updateMonitorPanelVisibility();
 }
 
+let pendingValues: Record<string, number> | null = null;
+let monitorSamples: number[] = []; // timestamps das últimas leituras (taxa)
+const monitorRate = $("monitor-rate");
+
+function queueMonitorValues(values: Record<string, number>) {
+  const now = performance.now();
+  monitorSamples.push(now);
+  monitorSamples = monitorSamples.filter((t) => now - t < 1000);
+  const wasIdle = pendingValues === null;
+  pendingValues = values; // leituras acumuladas: só a mais recente interessa
+  if (wasIdle) {
+    requestAnimationFrame(() => {
+      const v = pendingValues;
+      pendingValues = null;
+      if (v) applyMonitorValues(v);
+      monitorRate.textContent = `${monitorSamples.length} leituras/s`;
+    });
+  }
+}
+
 function applyMonitorValues(values: Record<string, number>) {
   lastMonitorAt = Date.now();
   // só as portas presentes na leitura atual ficam na tela
@@ -223,7 +247,7 @@ function handleSerialData(text: string) {
     const line = serialPending.slice(mark + 1, nl).trim();
     serialPending = serialPending.slice(nl + 1);
     try {
-      applyMonitorValues(JSON.parse(line));
+      queueMonitorValues(JSON.parse(line));
     } catch {
       /* linha corrompida: ignora */
     }
@@ -335,7 +359,9 @@ btnUpload.addEventListener("click", () =>
     showTab("console");
     consoleWrite("\n[enviando programa...]\n");
     try {
-      await board.uploadMain(code);
+      // bibliotecas que o programa precisa (o MicroPython não traz o driver do OLED)
+      const libs: Record<string, string> = usesOled(workspace) ? { "ssd1306.py": ssd1306Source } : {};
+      await board.uploadMain(code, libs);
     } catch (err) {
       if (err instanceof ReplError && err.message.startsWith("Sem resposta")) {
         throw new Error(`${err.message}\nA placa tem MicroPython? Se não, use "Gravar MicroPython". Aperte RESET na placa e veja se aparece "MicroPython v..." no console.`);
