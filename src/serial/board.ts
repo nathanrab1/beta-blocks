@@ -109,14 +109,21 @@ export class Board {
     );
   }
 
-  /** Interrompe o programa em execução (Ctrl-C). */
+  /**
+   * Interrompe o programa em execução (Ctrl-C) e desliga todos os timers.
+   * O Ctrl-C só para o programa principal; os timers (monitor de entradas,
+   * quadros do visor) continuariam imprimindo e bagunçariam a raw REPL.
+   */
   async stop(): Promise<void> {
     await this.write("\r\x03\x03");
+    await sleep(100);
+    await this.write("import machine\r\n");
+    await this.write("for _i in range(4): machine.Timer(_i).deinit()\r\n\r\n");
+    await sleep(250);
   }
 
   async enterRawRepl(): Promise<void> {
-    await this.write("\r\x03\x03");
-    await sleep(100);
+    await this.stop();
     this.buffer = "";
     await this.write("\r\x01");
     await this.waitFor(RAW_REPL_PROMPT, 3000);

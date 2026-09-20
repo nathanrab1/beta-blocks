@@ -11,6 +11,7 @@ import {
   programCode,
   resetBoardCode,
   MONITOR_MARK,
+  DISPLAY_MARK,
   usesOled,
   oledCode,
   type InputPins,
@@ -168,7 +169,48 @@ function ensureCard(key: string): HTMLElement {
 
 function updateMonitorPanelVisibility() {
   monitorPanel.hidden = monitorCards.childElementCount === 0;
-  (document.querySelector(".side-panel") as HTMLElement).hidden = monitorPanel.hidden && !PANELS_VISIBLE;
+  updateSidePanelVisibility();
+}
+
+function updateSidePanelVisibility() {
+  (document.querySelector(".side-panel") as HTMLElement).hidden =
+    monitorPanel.hidden && displayPanel.hidden && !PANELS_VISIBLE;
+}
+
+// ---------- preview do visor ----------
+const displayPanel = $("display-panel");
+const displayCanvas = $<HTMLCanvasElement>("display-canvas");
+
+/** Desenha um quadro do visor (formato MONO_VLSB do framebuf) no canvas. */
+function drawDisplayFrame(payload: string) {
+  const [w, h, b64] = payload.split(",");
+  const width = Number(w), height = Number(h);
+  if (!width || !height || !b64) return;
+  const bin = atob(b64);
+  if (bin.length < (width * height) / 8) return;
+  if (displayCanvas.width !== width || displayCanvas.height !== height) {
+    displayCanvas.width = width;
+    displayCanvas.height = height;
+    displayCanvas.style.height = `${(256 * height) / width}px`;
+  }
+  const ctx = displayCanvas.getContext("2d")!;
+  const img = ctx.createImageData(width, height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const on = (bin.charCodeAt(x + (y >> 3) * width) >> (y & 7)) & 1;
+      const i = (y * width + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = on ? 255 : 0;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  displayPanel.hidden = false;
+  updateSidePanelVisibility();
+}
+
+function clearDisplayPreview() {
+  displayPanel.hidden = true;
+  updateSidePanelVisibility();
 }
 
 function clearMonitorCards() {
@@ -225,11 +267,13 @@ setInterval(() => {
 }, 500);
 
 let serialPending = "";
-/** Separa as linhas do monitor (começam com MONITOR_MARK) do texto normal do console. */
+/** Separa as linhas do monitor/visor (marcadas) do texto normal do console. */
 function handleSerialData(text: string) {
   serialPending += text;
   for (;;) {
-    const mark = serialPending.indexOf(MONITOR_MARK);
+    const iMon = serialPending.indexOf(MONITOR_MARK);
+    const iDisp = serialPending.indexOf(DISPLAY_MARK);
+    const mark = iMon < 0 ? iDisp : iDisp < 0 ? iMon : Math.min(iMon, iDisp);
     if (mark < 0) {
       consoleWrite(serialPending);
       serialPending = "";
@@ -238,13 +282,15 @@ function handleSerialData(text: string) {
     if (mark > 0) consoleWrite(serialPending.slice(0, mark));
     const nl = serialPending.indexOf("\n", mark);
     if (nl < 0) {
-      serialPending = serialPending.slice(mark); // linha do monitor incompleta: espera o resto
+      serialPending = serialPending.slice(mark); // linha marcada incompleta: espera o resto
       return;
     }
+    const kind = serialPending[mark];
     const line = serialPending.slice(mark + 1, nl).trim();
     serialPending = serialPending.slice(nl + 1);
     try {
-      queueMonitorValues(JSON.parse(line));
+      if (kind === MONITOR_MARK) queueMonitorValues(JSON.parse(line));
+      else drawDisplayFrame(line);
     } catch {
       /* linha corrompida: ignora */
     }
@@ -262,6 +308,7 @@ async function stopAndReset() {
   await board.stop();
   await board.execSnippet(resetBoardCode(currentPin()));
   monitorMode = null;
+  clearDisplayPreview();
   if (monitoredPins.analog.length + monitoredPins.digital.length > 0) {
     await startReplMonitor();
   }
@@ -292,6 +339,7 @@ board.onData = handleSerialData;
 board.onDisconnect = () => {
   monitorMode = null;
   clearMonitorCards();
+  clearDisplayPreview();
   setStatus("Placa desconectada", "error");
   refreshButtons();
 };
@@ -348,6 +396,7 @@ async function disconnect() {
   await board.disconnect();
   monitorMode = null;
   clearMonitorCards();
+  clearDisplayPreview();
   setStatus("Desconectado");
 }
 

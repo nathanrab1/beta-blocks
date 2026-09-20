@@ -1,5 +1,6 @@
 import * as Blockly from "blockly";
 import { pythonGenerator, Order } from "blockly/python";
+import { openDrawEditor, bitmapToDataUrl, emptyBitmapB64 } from "../drawEditor";
 
 const EVENT_COLOUR = 45;
 const LED_COLOUR = 10;
@@ -257,7 +258,13 @@ export function defineBlocks(): void {
     },
   ]);
 
+  defineDrawBlock();
+
   // ---- Geradores Python ----
+
+  pythonGenerator.forBlock["oled_draw"] = (block) => {
+    return `visor_desenho('${(block as DrawBlock).bitmapB64}')\n`;
+  };
 
   pythonGenerator.forBlock["event_start"] = () => "";
 
@@ -363,6 +370,10 @@ export function resetBoardCode(ledPin: number): string {
     "except Exception:",
     "    pass",
     "try:",
+    "    _vis_timer.deinit()",
+    "except Exception:",
+    "    pass",
+    "try:",
     "    for _x in _pwms.values():",
     "        _x.deinit()",
     "    _pwms.clear()",
@@ -386,6 +397,58 @@ export function resetBoardCode(ledPin: number): string {
     "        pass",
     "",
   ].join("\n");
+}
+
+// ---- bloco "desenhar no visor" ----
+
+type DrawBlock = Blockly.Block & { bitmapB64: string };
+
+const EDIT_BUTTON_SRC =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="66" height="24">' +
+      '<rect x="0.5" y="0.5" width="65" height="23" rx="6" fill="#fff" stroke="#8a8f99"/>' +
+      '<text x="33" y="16" font-family="sans-serif" font-size="12" font-weight="600" text-anchor="middle" fill="#333">✎ Editar</text>' +
+      "</svg>",
+  );
+
+function defineDrawBlock() {
+  Blockly.Blocks["oled_draw"] = {
+    init(this: DrawBlock) {
+      this.bitmapB64 = emptyBitmapB64();
+      const preview = new Blockly.FieldImage(bitmapToDataUrl(this.bitmapB64), 96, 48, "desenho");
+      const editButton = new Blockly.FieldImage(EDIT_BUTTON_SRC, 66, 24, "editar", () => {
+        if (this.isInFlyout) return;
+        void openDrawEditor(this.bitmapB64).then((result) => {
+          if (result === null) return;
+          const old = this.bitmapB64;
+          this.bitmapB64 = result;
+          preview.setValue(bitmapToDataUrl(result));
+          // evento de mutação: dispara regeneração do código e salva o projeto
+          Blockly.Events.fire(
+            new Blockly.Events.BlockChange(
+              this, "mutation", null, JSON.stringify({ bitmap: old }), JSON.stringify({ bitmap: result }),
+            ),
+          );
+        });
+      });
+      this.appendDummyInput()
+        .appendField("desenhar no visor")
+        .appendField(preview, "PREVIEW")
+        .appendField(editButton, "EDIT");
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
+      this.setColour(OLED_COLOUR);
+      this.setTooltip("Mostra um desenho no visor. Clique em Editar para desenhar.");
+    },
+    saveExtraState(this: DrawBlock) {
+      return { bitmap: this.bitmapB64 };
+    },
+    loadExtraState(this: DrawBlock, state: { bitmap?: string }) {
+      this.bitmapB64 = state.bitmap || emptyBitmapB64();
+      (this.getField("PREVIEW") as Blockly.FieldImage).setValue(bitmapToDataUrl(this.bitmapB64));
+    },
+  };
 }
 
 /** Cabeçalho fixo do programa: imports e função auxiliar do LED. */
@@ -504,31 +567,70 @@ export function monitorCode(pins: InputPins): string {
   ].join("\n");
 }
 
-const OLED_BLOCK_TYPES = ["oled_config", "oled_text", "oled_clear"];
+const OLED_BLOCK_TYPES = ["oled_config", "oled_text", "oled_clear", "oled_draw"];
 
 export function usesOled(workspace: Blockly.Workspace): boolean {
   return programBlocks(workspace).some((b) => OLED_BLOCK_TYPES.includes(b.type));
 }
 
-/** Funções auxiliares do visor OLED (precisa do arquivo ssd1306.py na placa). */
+/** Marca que inicia um quadro do visor na serial: "\x1f<w>,<h>,<base64 do framebuffer>". */
+export const DISPLAY_MARK = "\x1f";
+
+/**
+ * Funções auxiliares do visor OLED (precisa do arquivo ssd1306.py na placa).
+ * Sem o OLED físico, usa um visor virtual na memória; em ambos os casos o
+ * conteúdo é enviado ao app (no máximo 10 quadros/s) para o preview.
+ */
 export function oledCode(): string {
   return [
     "# --- visor OLED ---",
     "from machine import SoftI2C",
-    "import ssd1306",
+    "import framebuf, binascii",
+    "try:",
+    "    import ssd1306",
+    "except ImportError:",
+    "    ssd1306 = None",
+    "",
+    "class _VisorVirtual(framebuf.FrameBuffer):",
+    "    def __init__(self, w, h):",
+    "        self.width = w",
+    "        self.height = h",
+    "        self.buffer = bytearray(w * h // 8)",
+    "        super().__init__(self.buffer, w, h, framebuf.MONO_VLSB)",
+    "    def show(self):",
+    "        pass",
     "",
     "oled = None",
+    "_vis_dirty = False",
+    "",
+    "def _visor_flush(t=None):",
+    "    global _vis_dirty",
+    "    if _vis_dirty and oled is not None:",
+    "        _vis_dirty = False",
+    "        print('\\x1f%d,%d,' % (oled.width, oled.height) + binascii.b2a_base64(oled.buffer).decode().strip())",
+    "",
+    "_vis_timer = Timer(2)",
+    "_vis_timer.init(period=100, mode=Timer.PERIODIC, callback=_visor_flush)",
+    "",
+    "def _visor_mostrar():",
+    "    global _vis_dirty",
+    "    oled.show()",
+    "    _vis_dirty = True",
     "",
     "def visor_iniciar(sda, scl, w, h):",
     "    global oled",
+    "    oled = None",
     "    try:",
     "        i2c = SoftI2C(sda=Pin(sda), scl=Pin(scl), freq=400000)",
     "        addrs = i2c.scan()",
-    "        addr = 0x3C if (0x3C in addrs or not addrs) else addrs[0]",
-    "        oled = ssd1306.SSD1306_I2C(w, h, i2c, addr=addr)",
+    "        if addrs and ssd1306:",
+    "            addr = 0x3C if 0x3C in addrs else addrs[0]",
+    "            oled = ssd1306.SSD1306_I2C(w, h, i2c, addr=addr)",
     "    except Exception as e:",
-    "        oled = None",
     "        print('Visor OLED nao encontrado:', e)",
+    "    if oled is None:",
+    "        oled = _VisorVirtual(w, h)  # sem OLED fisico: so o preview no app",
+    "    _visor_mostrar()",
     "",
     "def visor_texto(txt, linha):",
     "    if oled is None:",
@@ -560,13 +662,21 @@ export function oledCode(): string {
     "        oled.fill_rect(0, y * 8, oled.width, 8, 0)",
     "        oled.text(l, 0, y * 8, 1)",
     "        y += 1",
-    "    oled.show()",
+    "    _visor_mostrar()",
     "",
     "def visor_limpar():",
     "    if oled is None:",
     "        return",
     "    oled.fill(0)",
-    "    oled.show()",
+    "    _visor_mostrar()",
+    "",
+    "def visor_desenho(dados):",
+    "    if oled is None:",
+    "        return",
+    "    b = binascii.a2b_base64(dados)",
+    "    n = min(len(b), len(oled.buffer))",
+    "    oled.buffer[:n] = b[:n]",
+    "    _visor_mostrar()",
     "",
     "",
   ].join("\n");
@@ -648,6 +758,7 @@ export const toolbox = {
           inputs: { TEXT: { shadow: { type: "text", fields: { TEXT: "Ola!" } } } },
         },
         { kind: "block", type: "oled_clear" },
+        { kind: "block", type: "oled_draw" },
       ],
     },
     {

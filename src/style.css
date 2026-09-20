@@ -113,3 +113,13 @@ body {
 .mcard.on .mdot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .mcard.on .mvalue { color: var(--ok); }
 .mcard.stale { opacity: 0.55; }
+
+.display-frame { display: flex; justify-content: center; padding: 10px; background: #0b0d12; border-radius: 10px; }
+#display-canvas { width: 256px; height: 128px; image-rendering: pixelated; background: #000; }
+
+/* editor de desenho do visor */
+.draw-box { max-width: none; }
+.draw-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.draw-tools .tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.draw-frame { padding: 12px; background: #0b0d12; border-radius: 10px; display: inline-block; }
+.draw-canvas { display: block; image-rendering: pixelated; background: #000; cursor: crosshair; touch-action: none; }
