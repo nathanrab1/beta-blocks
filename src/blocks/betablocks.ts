@@ -9,6 +9,7 @@ const CONTROL_COLOUR = 120;
 const PORT_COLOUR = 200;
 const INPUT_COLOUR = 160;
 const OLED_COLOUR = 260;
+const WIFI_COLOUR = 290;
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
 const NAMED_COLORS: Record<string, [number, number, number]> = {
@@ -23,6 +24,20 @@ const NAMED_COLORS: Record<string, [number, number, number]> = {
   BRANCO: [255, 255, 255],
 };
 
+/** Teclas do bloco "quando apertar a tecla": [texto, nome enviado à placa]. */
+export const KEY_OPTIONS: [string, string][] = [
+  ["espaço", "space"],
+  ["↑ cima", "up"],
+  ["↓ baixo", "down"],
+  ["← esquerda", "left"],
+  ["→ direita", "right"],
+  ["Enter", "enter"],
+  ..."abcdefghijklmnopqrstuvwxyz0123456789".split("").map((c): [string, string] => [c, c]),
+];
+
+/** Marca de uma tecla enviada pela serial: "\x1d<nome>\n". */
+export const KEY_MARK = "\x1d";
+
 export function defineBlocks(): void {
   Blockly.defineBlocksWithJsonArray([
     {
@@ -32,6 +47,43 @@ export function defineBlocks(): void {
       hat: "cap",
       colour: EVENT_COLOUR,
       tooltip: "Tudo que estiver pendurado aqui roda quando a placa liga. Blocos soltos não rodam.",
+    },
+    {
+      type: "event_key",
+      message0: "quando apertar a tecla %1",
+      args0: [{ type: "field_dropdown", name: "KEY", options: KEY_OPTIONS }],
+      nextStatement: null,
+      hat: "cap",
+      colour: EVENT_COLOUR,
+      tooltip: "Roda os blocos pendurados quando essa tecla é apertada no computador (com a placa conectada).",
+    },
+    {
+      type: "event_wifi",
+      message0: "quando receber %1 pelo Wi-Fi",
+      args0: [{ type: "field_input", name: "NAME", text: "botão 1" }],
+      nextStatement: null,
+      hat: "cap",
+      colour: WIFI_COLOUR,
+      tooltip: "Vira um botão na página de controle do celular. Roda os blocos pendurados quando o botão é apertado.",
+    },
+    {
+      type: "wifi_connect",
+      message0: "conectar no Wi-Fi  rede %1  senha %2",
+      args0: [
+        { type: "field_input", name: "SSID", text: "MinhaRede" },
+        { type: "field_input", name: "PASS", text: "senha" },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: WIFI_COLOUR,
+      tooltip: "Entra na rede Wi-Fi e liga a página de controle. Use uma vez, no começo do programa.",
+    },
+    {
+      type: "wifi_ip",
+      message0: "endereço do Wi-Fi",
+      output: "String",
+      colour: WIFI_COLOUR,
+      tooltip: "O endereço (IP) da placa na rede, para abrir no celular. Vazio se não conectou.",
     },
     {
       type: "led_rgb",
@@ -267,6 +319,16 @@ export function defineBlocks(): void {
   };
 
   pythonGenerator.forBlock["event_start"] = () => "";
+  pythonGenerator.forBlock["event_key"] = () => "";
+  pythonGenerator.forBlock["event_wifi"] = () => "";
+
+  pythonGenerator.forBlock["wifi_connect"] = (block) => {
+    const ssid = JSON.stringify(block.getFieldValue("SSID"));
+    const pass = JSON.stringify(block.getFieldValue("PASS"));
+    return `wifi_iniciar(${ssid}, ${pass})\n`;
+  };
+
+  pythonGenerator.forBlock["wifi_ip"] = () => ["_wifi_ip", Order.ATOMIC];
 
   pythonGenerator.forBlock["led_rgb"] = (block, gen) => {
     const r = gen.valueToCode(block, "R", Order.NONE) || "0";
@@ -371,6 +433,15 @@ export function resetBoardCode(ledPin: number): string {
     "    pass",
     "try:",
     "    _vis_timer.deinit()",
+    "except Exception:",
+    "    pass",
+    "try:",
+    "    _key_timer.deinit()",
+    "except Exception:",
+    "    pass",
+    "try:",
+    "    _wifi_timer.deinit()",
+    "    _wifi_srv.close()",
     "except Exception:",
     "    pass",
     "try:",
@@ -491,24 +562,236 @@ export function preamble(pin: number): string {
   ].join("\n");
 }
 
-/** Gera o código só das pilhas penduradas em "ao iniciar"; blocos soltos são ignorados. */
+const HAT_TYPES = ["event_start", "event_key", "event_wifi"];
+const WIFI_BLOCK_TYPES = ["event_wifi", "wifi_connect", "wifi_ip"];
+
+/** Nomes dos blocos "quando receber ... pelo Wi-Fi" do programa, na ordem. */
+export function wifiEventNames(workspace: Blockly.Workspace): string[] {
+  return workspace
+    .getTopBlocks(true)
+    .filter((b) => b.type === "event_wifi")
+    .map((b) => b.getFieldValue("NAME") as string);
+}
+
+export function usesWifi(workspace: Blockly.Workspace): boolean {
+  return programBlocks(workspace).some((b) => WIFI_BLOCK_TYPES.includes(b.type));
+}
+
+/** Gera o código só das pilhas penduradas em eventos; blocos soltos são ignorados. */
 export function programCode(workspace: Blockly.Workspace): string {
   pythonGenerator.init(workspace);
+  const tops = workspace.getTopBlocks(true);
   let code = "";
-  for (const block of workspace.getTopBlocks(true)) {
+
+  // "quando apertar a tecla": cada pilha vira uma função registrada em _teclas
+  const keyHats = tops.filter((b) => b.type === "event_key");
+  const hasWifiHats = tops.some((b) => b.type === "event_wifi");
+  if (keyHats.length > 0 || hasWifiHats) code += keysRuntimeCode();
+  keyHats.forEach((hat, i) => {
+    const next = hat.getNextBlock();
+    let body = next ? pythonGenerator.blockToCode(next) : "";
+    if (Array.isArray(body)) body = body[0];
+    const key = hat.getFieldValue("KEY");
+    code += `def _tecla_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
+    code += `_teclas[${JSON.stringify(key)}] = _tecla_${i}\n\n`;
+  });
+
+  // "quando receber ... pelo Wi-Fi": cada pilha vira um botão na página de controle
+  const wifiHats = tops.filter((b) => b.type === "event_wifi");
+  if (usesWifi(workspace)) code += wifiRuntimeCode();
+  wifiHats.forEach((hat, i) => {
+    const next = hat.getNextBlock();
+    let body = next ? pythonGenerator.blockToCode(next) : "";
+    if (Array.isArray(body)) body = body[0];
+    const name = hat.getFieldValue("NAME");
+    code += `def _wifi_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
+    code += `_wifi_nomes.append(${JSON.stringify(name)})\n_wifi_funcs.append(_wifi_${i})\n\n`;
+  });
+
+  // "ao iniciar"
+  for (const block of tops) {
     if (block.type !== "event_start") continue;
     let c = pythonGenerator.blockToCode(block);
     if (Array.isArray(c)) c = c[0];
     if (c) code += c;
   }
+
+  // com teclas ou Wi-Fi, o programa precisa continuar vivo para receber os eventos
+  if (keyHats.length > 0 || wifiHats.length > 0) {
+    code += "\n# espera os eventos\nwhile True:\n    time.sleep_ms(100)\n";
+  }
   return pythonGenerator.finish(code);
 }
 
-/** Blocos que fazem parte do programa (pendurados em "ao iniciar"). */
+/** Marca de status do Wi-Fi na serial: "\x1c{"ip": ...}" ou "\x1c{"erro": ...}". */
+export const WIFI_MARK = "\x1c";
+
+/** Página de controle servida pela placa (um botão por evento). */
+const WIFI_PAGE =
+  "<!doctype html><html lang=pt-BR><head><meta charset=utf-8>" +
+  '<meta name=viewport content="width=device-width,initial-scale=1"><title>Beta Blocks</title>' +
+  "<style>body{font-family:sans-serif;background:#f4f5f7;margin:0;padding:16px}" +
+  "h1{font-size:18px;color:#555}button{display:block;width:100%;font-size:22px;padding:18px;margin:10px 0;" +
+  "border:0;border-radius:12px;background:#2f80ed;color:#fff}button:active{background:#1f6dd6}</style></head>" +
+  "<body><h1>Beta Blocks</h1>{BOTOES}<script>document.querySelectorAll('button').forEach((b,i)=>" +
+  "b.onclick=()=>fetch('/b?i='+i))</script></body></html>";
+
+/** Conexão Wi-Fi + servidor web mínimo, atendido por um timer (não bloqueia o programa). */
+function wifiRuntimeCode(): string {
+  return [
+    "# --- Wi-Fi ---",
+    "import network, socket",
+    "import json as _json",
+    "_wifi_nomes = []",
+    "_wifi_funcs = []",
+    "_wifi_srv = None",
+    "_wifi_ip = ''",
+    `_WIFI_PAGE = ${JSON.stringify(WIFI_PAGE)}`,
+    "",
+    "def _urldecode(b):",
+    "    out = bytearray()",
+    "    i = 0",
+    "    while i < len(b):",
+    "        if b[i] == 0x25 and i + 2 < len(b):  # %XX",
+    "            out.append(int(b[i + 1:i + 3], 16))",
+    "            i += 3",
+    "        elif b[i] == 0x2B:  # +",
+    "            out.append(0x20)",
+    "            i += 1",
+    "        else:",
+    "            out.append(b[i])",
+    "            i += 1",
+    "    return bytes(out).decode()",
+    "",
+    "def _wifi_atender(t):",
+    "    try:",
+    "        cl, _ = _wifi_srv.accept()",
+    "    except OSError:",
+    "        return",
+    "    try:",
+    "        cl.settimeout(1.0)",
+    "        # le o pedido inteiro: fechar com dados nao lidos faz o celular descartar a resposta",
+    "        req = b''",
+    "        while b'\\r\\n\\r\\n' not in req and len(req) < 4096:",
+    "            parte = cl.recv(512)",
+    "            if not parte:",
+    "                break",
+    "            req += parte",
+    "        linha = req.split(b'\\r\\n', 1)[0]",
+    "        if linha.startswith(b'GET /b?i='):",
+    "            i = int(linha[9:].split(b' ')[0])",
+    "            cl.write(b'HTTP/1.0 204 No Content\\r\\nConnection: close\\r\\n\\r\\n')",
+    "            cl.close()",
+    "            if 0 <= i < len(_wifi_funcs):",
+    "                _wifi_funcs[i]()",
+    "        elif linha.startswith(b'GET /b?n='):",
+    "            nome = _urldecode(linha[9:].split(b' ')[0])",
+    "            cl.write(b'HTTP/1.0 204 No Content\\r\\nAccess-Control-Allow-Origin: *\\r\\nConnection: close\\r\\n\\r\\n')",
+    "            cl.close()",
+    "            _wifi_disparar(nome)",
+    "        elif linha.startswith(b'GET / '):",
+    "            botoes = ''.join('<button>%s</button>' % n for n in _wifi_nomes)",
+    "            corpo = _WIFI_PAGE.replace('{BOTOES}', botoes).encode()",
+    "            cl.write(b'HTTP/1.0 200 OK\\r\\nContent-Type: text/html; charset=utf-8\\r\\nContent-Length: %d\\r\\nConnection: close\\r\\n\\r\\n' % len(corpo))",
+    "            cl.write(corpo)",
+    "        else:",
+    "            cl.write(b'HTTP/1.0 404 Not Found\\r\\nConnection: close\\r\\n\\r\\n')",
+    "    except Exception as e:",
+    "        print('Wi-Fi: erro', e)",
+    "    finally:",
+    "        try:",
+    "            cl.close()",
+    "        except Exception:",
+    "            pass",
+    "",
+    "def wifi_iniciar(ssid, senha):",
+    "    global _wifi_srv, _wifi_ip, _wifi_timer",
+    "    wlan = network.WLAN(network.STA_IF)",
+    "    wlan.active(True)",
+    "    try:",
+    "        wlan.config(pm=network.WLAN.PM_NONE)  # sem economia de energia: responde sempre",
+    "    except Exception:",
+    "        pass",
+    "    # o boot.py pode estar conectando na mesma rede: espera um pouco antes de reconectar",
+    "    for _ in range(50):",
+    "        if wlan.isconnected() or wlan.status() != network.STAT_CONNECTING:",
+    "            break",
+    "        time.sleep_ms(100)",
+    "    if not wlan.isconnected():",
+    "        wlan.connect(ssid, senha)",
+    "        for _ in range(150):",
+    "            if wlan.isconnected():",
+    "                break",
+    "            time.sleep_ms(100)",
+    "    if not wlan.isconnected():",
+    "        print('\\x1c' + _json.dumps({'erro': 'nao conectou na rede ' + ssid}))",
+    "        return",
+    "    try:",
+    "        with open('wifi.json', 'w') as f:  # lembrado pelo boot.py para o envio por Wi-Fi",
+    "            f.write(_json.dumps({'ssid': ssid, 'senha': senha}))",
+    "    except Exception:",
+    "        pass",
+    "    _wifi_ip = wlan.ifconfig()[0]",
+    "    print('\\x1c' + _json.dumps({'ip': _wifi_ip}))",
+    "    if _wifi_srv is None:",
+    "        s = socket.socket()",
+    "        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
+    "        s.bind(('0.0.0.0', 80))",
+    "        s.listen(2)",
+    "        s.setblocking(False)",
+    "        _wifi_srv = s",
+    "        _wifi_timer = Timer(0)",
+    "        _wifi_timer.init(period=50, mode=Timer.PERIODIC, callback=_wifi_atender)",
+    "",
+    "",
+  ].join("\n");
+}
+
+/** Leitor de teclas: um timer lê a serial e chama a função da tecla recebida. */
+function keysRuntimeCode(): string {
+  return [
+    "# --- mensagens do computador (teclas e comandos de Wi-Fi pelo cabo) ---",
+    "import sys, select",
+    "_teclas = {}",
+    "_tecla_buf = ''",
+    "_tecla_poll = select.poll()",
+    "_tecla_poll.register(sys.stdin, select.POLLIN)",
+    "",
+    "def _tecla_ler(t):",
+    "    global _tecla_buf",
+    "    while _tecla_poll.poll(0):",
+    "        c = sys.stdin.read(1)",
+    "        if c == '\\n':",
+    "            nome, _tecla_buf = _tecla_buf, ''",
+    "            if nome.startswith('\\x1d'):",
+    "                nome = nome[1:]",
+    "                if nome.startswith('wifi:'):",
+    "                    _wifi_disparar(nome[5:])",
+    "                else:",
+    "                    f = _teclas.get(nome)",
+    "                    if f:",
+    "                        f()",
+    "        else:",
+    "            _tecla_buf += c",
+    "",
+    "def _wifi_disparar(nome):",
+    "    try:",
+    "        _wifi_funcs[_wifi_nomes.index(nome)]()",
+    "    except (NameError, ValueError):",
+    "        pass",
+    "",
+    "_key_timer = Timer(1)",
+    "_key_timer.init(period=50, mode=Timer.PERIODIC, callback=_tecla_ler)",
+    "",
+    "",
+  ].join("\n");
+}
+
+/** Blocos que fazem parte do programa (pendurados em algum evento). */
 export function programBlocks(workspace: Blockly.Workspace): Blockly.Block[] {
   const result: Blockly.Block[] = [];
   for (const top of workspace.getTopBlocks(false)) {
-    if (top.type === "event_start") result.push(...top.getDescendants(false));
+    if (HAT_TYPES.includes(top.type)) result.push(...top.getDescendants(false));
   }
   return result;
 }
@@ -689,7 +972,11 @@ export const toolbox = {
       kind: "category",
       name: "Eventos",
       colour: EVENT_COLOUR,
-      contents: [{ kind: "block", type: "event_start" }],
+      contents: [
+        { kind: "block", type: "event_start" },
+        { kind: "block", type: "event_key" },
+        { kind: "block", type: "event_wifi" },
+      ],
     },
     {
       kind: "category",
@@ -759,6 +1046,16 @@ export const toolbox = {
         },
         { kind: "block", type: "oled_clear" },
         { kind: "block", type: "oled_draw" },
+      ],
+    },
+    {
+      kind: "category",
+      name: "Wi-Fi",
+      colour: WIFI_COLOUR,
+      contents: [
+        { kind: "block", type: "wifi_connect" },
+        { kind: "block", type: "event_wifi" },
+        { kind: "block", type: "wifi_ip" },
       ],
     },
     {

@@ -10,13 +10,18 @@ import {
   monitorCode,
   programCode,
   resetBoardCode,
+  KEY_OPTIONS,
+  KEY_MARK,
   MONITOR_MARK,
   DISPLAY_MARK,
+  WIFI_MARK,
+  wifiEventNames,
   usesOled,
   oledCode,
   type InputPins,
 } from "./blocks/betablocks";
 import ssd1306Source from "./lib/ssd1306.py?raw";
+import bootSource from "./lib/boot.py?raw";
 import { Board, ReplError } from "./serial/board";
 import { flashMicroPython, loadFirmware } from "./serial/flasher";
 
@@ -26,6 +31,7 @@ const STORAGE_KEY = "betablocks.workspace";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const btnConnect = $<HTMLButtonElement>("btn-connect");
 const btnUpload = $<HTMLButtonElement>("btn-upload");
+const btnUploadWifi = $<HTMLButtonElement>("btn-upload-wifi");
 const btnStop = $<HTMLButtonElement>("btn-stop");
 const btnFlash = $<HTMLButtonElement>("btn-flash");
 const codeView = $<HTMLPreElement>("code-view");
@@ -81,6 +87,45 @@ const workspace = Blockly.inject("blockly-div", {
   move: { scrollbars: true, drag: true, wheel: false },
 });
 
+// "Duplicar" do menu de contexto: leva junto toda a corrente de blocos abaixo
+function duplicateWithChain(block: Blockly.BlockSvg) {
+  const state = Blockly.serialization.blocks.save(block, { addCoordinates: true, addNextBlocks: true });
+  if (!state) return;
+  state.x = (state.x ?? 0) + 30;
+  state.y = (state.y ?? 0) + 30;
+  Blockly.Events.setGroup(true);
+  try {
+    const copy = Blockly.serialization.blocks.append(state, block.workspace) as Blockly.BlockSvg;
+    copy.select();
+  } finally {
+    Blockly.Events.setGroup(false);
+  }
+}
+
+Blockly.ContextMenuRegistry.registry.unregister("blockDuplicate");
+Blockly.ContextMenuRegistry.registry.register({
+  id: "blockDuplicate",
+  weight: 1,
+  scopeType: Blockly.ContextMenuRegistry.ScopeType.BLOCK,
+  displayText: () => Blockly.Msg["DUPLICATE_BLOCK"],
+  preconditionFn: (scope) => {
+    const b = scope.block;
+    if (!b || b.isInFlyout || !b.isDeletable() || !b.isMovable()) return "hidden";
+    return b.isDuplicatable() ? "enabled" : "disabled";
+  },
+  callback: (scope) => {
+    if (scope.block) duplicateWithChain(scope.block);
+  },
+});
+
+/** Arquivos que acompanham o main.py: boot.py (receptor Wi-Fi) e bibliotecas usadas. */
+function programFiles(): Record<string, string> {
+  const files: Record<string, string> = { "boot.py": bootSource };
+  // o MicroPython não traz o driver do OLED
+  if (usesOled(workspace)) files["ssd1306.py"] = ssd1306Source;
+  return files;
+}
+
 function generateCode(): string {
   return (
     preamble(currentPin()) +
@@ -131,6 +176,7 @@ workspace.addChangeListener((e) => {
   updateCode();
   saveWorkspace();
   onInputPinsChanged();
+  updateWifiSendControl();
 });
 
 loadWorkspace();
@@ -174,8 +220,73 @@ function updateMonitorPanelVisibility() {
 
 function updateSidePanelVisibility() {
   (document.querySelector(".side-panel") as HTMLElement).hidden =
-    monitorPanel.hidden && displayPanel.hidden && !PANELS_VISIBLE;
+    monitorPanel.hidden && displayPanel.hidden && wifiPanel.hidden && !PANELS_VISIBLE;
 }
+
+// ---------- Wi-Fi ----------
+const wifiPanel = $("wifi-panel");
+const wifiInfo = $("wifi-info");
+
+const WIFI_IP_KEY = "betablocks.wifiIp";
+
+function showWifiStatus(info: { ip?: string; erro?: string }) {
+  wifiIp = info.ip ?? null;
+  if (info.ip) localStorage.setItem(WIFI_IP_KEY, info.ip);
+  if (info.ip) {
+    wifiInfo.className = "wifi-info";
+    wifiInfo.innerHTML = `Conectado. No celular (na mesma rede), abra:<span class="url">http://${info.ip}</span>`;
+  } else {
+    wifiInfo.className = "wifi-info error";
+    wifiInfo.textContent = `Wi-Fi: ${info.erro ?? "erro"}. Confira o nome da rede e a senha.`;
+  }
+  updateWifiSendControl();
+}
+
+function clearWifiStatus() {
+  wifiIp = null;
+  wifiInfo.textContent = "";
+  updateWifiSendControl();
+}
+
+// ---- enviar comando de Wi-Fi a partir do app ----
+let wifiIp: string | null = null;
+const wifiSend = $("wifi-send");
+const wifiSendName = $<HTMLSelectElement>("wifi-send-name");
+
+/** Mostra o seletor de comandos quando o programa (rodando) tem eventos de Wi-Fi. */
+function updateWifiSendControl() {
+  const names = wifiEventNames(workspace);
+  const current = wifiSendName.value;
+  wifiSendName.replaceChildren(
+    ...names.map((n) => {
+      const o = document.createElement("option");
+      o.value = o.textContent = n;
+      return o;
+    }),
+  );
+  if (names.includes(current)) wifiSendName.value = current;
+  wifiSend.hidden = !(names.length > 0 && board.connected && monitorMode === "program");
+  wifiPanel.hidden = wifiSend.hidden && !wifiInfo.textContent;
+  updateSidePanelVisibility();
+}
+
+$("btn-wifi-send").addEventListener("click", async () => {
+  const name = wifiSendName.value;
+  if (!name) return;
+  // Página HTTPS (GitHub Pages) não pode chamar http://<ip>; nesse caso vai pelo cabo USB
+  const viaWifi = wifiIp !== null && location.protocol !== "https:";
+  if (viaWifi) {
+    try {
+      await fetch(`http://${wifiIp}/b?n=${encodeURIComponent(name)}`, { mode: "no-cors" });
+      setStatus(`"${name}" enviado pelo Wi-Fi`, "ok");
+      return;
+    } catch {
+      /* placa não respondeu pelo Wi-Fi: tenta pelo cabo */
+    }
+  }
+  await board.write(`${KEY_MARK}wifi:${name}\n`).catch(() => {});
+  setStatus(`"${name}" enviado pelo cabo USB`, "ok");
+});
 
 // ---------- preview do visor ----------
 const displayPanel = $("display-panel");
@@ -271,9 +382,10 @@ let serialPending = "";
 function handleSerialData(text: string) {
   serialPending += text;
   for (;;) {
-    const iMon = serialPending.indexOf(MONITOR_MARK);
-    const iDisp = serialPending.indexOf(DISPLAY_MARK);
-    const mark = iMon < 0 ? iDisp : iDisp < 0 ? iMon : Math.min(iMon, iDisp);
+    const marks = [MONITOR_MARK, DISPLAY_MARK, WIFI_MARK]
+      .map((m) => serialPending.indexOf(m))
+      .filter((i) => i >= 0);
+    const mark = marks.length ? Math.min(...marks) : -1;
     if (mark < 0) {
       consoleWrite(serialPending);
       serialPending = "";
@@ -290,6 +402,7 @@ function handleSerialData(text: string) {
     serialPending = serialPending.slice(nl + 1);
     try {
       if (kind === MONITOR_MARK) queueMonitorValues(JSON.parse(line));
+      else if (kind === WIFI_MARK) showWifiStatus(JSON.parse(line));
       else drawDisplayFrame(line);
     } catch {
       /* linha corrompida: ignora */
@@ -309,6 +422,7 @@ async function stopAndReset() {
   await board.execSnippet(resetBoardCode(currentPin()));
   monitorMode = null;
   clearDisplayPreview();
+  clearWifiStatus();
   if (monitoredPins.analog.length + monitoredPins.digital.length > 0) {
     await startReplMonitor();
   }
@@ -333,6 +447,30 @@ function onInputPinsChanged() {
 monitoredPins = collectInputPins(workspace);
 updateMonitorPanelVisibility();
 
+// ---------- teclas do computador -> placa ----------
+const KEY_NAMES: Record<string, string> = {
+  " ": "space",
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  Enter: "enter",
+};
+const KNOWN_KEYS = new Set(KEY_OPTIONS.map(([, v]) => v));
+
+document.addEventListener("keydown", (e) => {
+  if (!board.connected || monitorMode !== "program" || busy) return;
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const target = e.target as HTMLElement | null;
+  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+  if (Blockly.WidgetDiv.isVisible() || Blockly.DropDownDiv.isVisible()) return;
+  const name = KEY_NAMES[e.key] ?? e.key.toLowerCase();
+  if (!KNOWN_KEYS.has(name)) return;
+  e.preventDefault();
+  void board.write(`${KEY_MARK}${name}\n`).catch(() => {});
+  setStatus(`Tecla "${e.key === " " ? "espaço" : e.key}" enviada`, "ok");
+});
+
 // ---------- placa ----------
 const board = new Board();
 board.onData = handleSerialData;
@@ -340,6 +478,7 @@ board.onDisconnect = () => {
   monitorMode = null;
   clearMonitorCards();
   clearDisplayPreview();
+  clearWifiStatus();
   setStatus("Placa desconectada", "error");
   refreshButtons();
 };
@@ -397,6 +536,7 @@ async function disconnect() {
   monitorMode = null;
   clearMonitorCards();
   clearDisplayPreview();
+  clearWifiStatus();
   setStatus("Desconectado");
 }
 
@@ -411,9 +551,7 @@ btnUpload.addEventListener("click", () =>
     showTab("console");
     consoleWrite("\n[enviando programa...]\n");
     try {
-      // bibliotecas que o programa precisa (o MicroPython não traz o driver do OLED)
-      const libs: Record<string, string> = usesOled(workspace) ? { "ssd1306.py": ssd1306Source } : {};
-      await board.uploadMain(code, libs);
+      await board.uploadMain(code, programFiles());
     } catch (err) {
       if (err instanceof ReplError && err.message.startsWith("Sem resposta")) {
         throw new Error(`${err.message}\nA placa tem MicroPython? Se não, use "Gravar MicroPython". Aperte RESET na placa e veja se aparece "MicroPython v..." no console.`);
@@ -421,6 +559,7 @@ btnUpload.addEventListener("click", () =>
       throw err;
     }
     monitorMode = "program";
+    updateWifiSendControl();
     setStatus("Programa enviado e rodando!", "ok");
   }),
 );
@@ -429,6 +568,63 @@ btnStop.addEventListener("click", () =>
   run("Parar", async () => {
     await stopAndReset();
     setStatus(monitorMode === "repl" ? "Programa parado — monitor de entradas ligado" : "Programa parado", "ok");
+  }),
+);
+
+// ---------- envio do programa por Wi-Fi ----------
+const OTA_PORT = 8266;
+
+async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+btnUploadWifi.addEventListener("click", () =>
+  run("Envio por Wi-Fi", async () => {
+    if (location.protocol === "https:") {
+      throw new Error(
+        "O navegador não deixa esta página (HTTPS) falar com a placa na rede local. " +
+          "Abra o Beta Blocks pelo computador (npm run dev) para enviar por Wi-Fi, ou use o cabo.",
+      );
+    }
+    const last = wifiIp ?? localStorage.getItem(WIFI_IP_KEY) ?? "";
+    const ip = prompt("Endereço (IP) da placa na rede:", last)?.trim();
+    if (!ip) {
+      setStatus("Envio por Wi-Fi cancelado");
+      return;
+    }
+    const base = `http://${ip}:${OTA_PORT}`;
+
+    setStatus(`Procurando a placa em ${ip}…`);
+    try {
+      const r = await fetchWithTimeout(`${base}/ping`, {}, 4000);
+      if ((await r.text()) !== "betablocks") throw new Error("resposta inesperada");
+    } catch (err) {
+      const motivo = err instanceof DOMException && err.name === "AbortError"
+        ? "tempo esgotado (4 s sem resposta)"
+        : `${(err as Error).name}: ${(err as Error).message}`;
+      throw new Error(
+        `A placa não respondeu em ${ip}:${OTA_PORT} — ${motivo}. Ela precisa estar ligada, na mesma rede, ` +
+          "e já ter recebido um programa pelo cabo com o bloco 'conectar no Wi-Fi'.",
+      );
+    }
+
+    setStatus("Enviando programa por Wi-Fi…");
+    const files = { ...programFiles(), "main.py": generateCode() };
+    // text/plain evita o preflight CORS; o boot.py lê o corpo como JSON
+    const r = await fetchWithTimeout(
+      `${base}/programa`,
+      { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(files) },
+      15000,
+    );
+    if (!r.ok) throw new Error(`a placa respondeu ${r.status}`);
+    localStorage.setItem(WIFI_IP_KEY, ip);
+    setStatus("Programa enviado por Wi-Fi! A placa está reiniciando.", "ok");
   }),
 );
 

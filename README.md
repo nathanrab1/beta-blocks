@@ -44,3 +44,16 @@ src/serial/board.ts        cliente raw-REPL do MicroPython (Web Serial)
 src/serial/flasher.ts      gravação do firmware com esptool-js
 public/firmware/           MicroPython v1.29.0 (ESP32_GENERIC_S3)
 ```
+
+## Envio por Wi-Fi
+
+1. Uma vez pelo cabo: enviar um programa com o bloco `conectar no Wi-Fi`. Isso instala o `boot.py` (receptor na porta 8266) e salva a rede na placa (`wifi.json`).
+2. Depois, com a placa em qualquer fonte: **📶 Enviar por Wi-Fi** → confirmar o IP → a placa grava e reinicia.
+
+Só funciona com o app aberto local (`npm run dev`); páginas HTTPS (GitHub Pages) não podem falar com a rede local.
+
+### Se der "Failed to fetch" no Chrome
+
+O Chrome tem uma permissão própria de acesso à rede local. Em `chrome://settings/content/localNetworkAccess`, permitir que sites peçam acesso e remover `localhost:5173` de "Not allowed"; depois fechar o Chrome (Cmd+Q) e abrir de novo. No macOS, confira também Ajustes → Privacidade e Segurança → Rede Local → Google Chrome ligado.
+
+Teste rápido de que a placa está na rede: abrir `http://<ip>:8266/ping` (deve mostrar `betablocks`) — no celular ou no Safari.

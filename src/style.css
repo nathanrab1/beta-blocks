@@ -123,3 +123,9 @@ body {
 .draw-tools .tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .draw-frame { padding: 12px; background: #0b0d12; border-radius: 10px; display: inline-block; }
 .draw-canvas { display: block; image-rendering: pixelated; background: #000; cursor: crosshair; touch-action: none; }
+
+.wifi-info { font-size: 13px; line-height: 1.5; }
+.wifi-info .url { display: block; font: 600 18px/1.3 "SF Mono", Menlo, monospace; color: var(--accent); margin: 4px 0; user-select: all; }
+.wifi-info.error { color: var(--danger); }
+.wifi-send { display: flex; gap: 6px; margin-top: 8px; }
+.wifi-send select { flex: 1; font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
