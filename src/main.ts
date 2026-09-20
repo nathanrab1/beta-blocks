@@ -521,8 +521,13 @@ async function connect() {
   const port = await navigator.serial.requestPort();
   await board.connect(port);
   refreshButtons();
-  setStatus("Verificando MicroPython…");
-  const ok = await board.ping();
+  // o primeiro boot depois da gravação demora (formata a memória): tenta algumas vezes
+  let ok = false;
+  for (let tentativa = 1; tentativa <= 4 && !ok; tentativa++) {
+    setStatus(tentativa === 1 ? "Verificando MicroPython…" : `Verificando MicroPython… (tentativa ${tentativa})`);
+    ok = await board.ping();
+    if (!ok) await new Promise((r) => setTimeout(r, 2000));
+  }
   if (ok) {
     await stopAndReset(); // placa "limpa": programa parado, LED apagado, portas soltas
     setStatus("Conectado — MicroPython pronto", "ok");
@@ -699,7 +704,7 @@ $("btn-flash-go").addEventListener("click", () => {
       progress: (w, t) => setProgress(`${Math.round((w / t) * 100)}%`),
     });
     consoleWrite(`\nMicroPython gravado no ${chip}.\n`);
-    setStatus("MicroPython gravado! Clique em \"Conectar\" e escolha a porta novamente.", "ok");
+    setStatus("MicroPython gravado! Aperte RESET na placa, espere 5 s e clique em \"Conectar\".", "ok");
   });
 });
 
