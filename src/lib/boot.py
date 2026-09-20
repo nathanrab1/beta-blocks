@@ -11,6 +11,22 @@ _OTA_PORT = 8266
 _CORS = b'Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Private-Network: true\r\n'
 
 
+def _urldecode(b):
+    out = bytearray()
+    i = 0
+    while i < len(b):
+        if b[i] == 0x25 and i + 2 < len(b):  # %XX
+            out.append(int(b[i + 1:i + 3], 16))
+            i += 3
+        elif b[i] == 0x2B:  # +
+            out.append(0x20)
+            i += 1
+        else:
+            out.append(b[i])
+            i += 1
+    return bytes(out).decode()
+
+
 def _ota_atender(cl):
     cl.settimeout(5)
     req = b''
@@ -25,6 +41,22 @@ def _ota_atender(cl):
         cl.write(b'HTTP/1.0 204 No Content\r\n' + _CORS +
                  b'Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n'
                  b'Access-Control-Allow-Headers: content-type\r\nConnection: close\r\n\r\n')
+    elif linha.startswith(b'GET /k?n=') or linha.startswith(b'GET /b?n='):
+        # tecla do computador (/k) ou comando de Wi-Fi (/b) vindos do app, sem cabo.
+        # As funcoes _teclas / _wifi_disparar sao definidas pelo main.py no mesmo namespace.
+        nome = _urldecode(linha[9:].split(b' ')[0])
+        cl.write(b'HTTP/1.0 204 No Content\r\n' + _CORS + b'Connection: close\r\n\r\n')
+        cl.close()
+        g = globals()
+        try:
+            if linha.startswith(b'GET /k?n='):
+                f = g.get('_teclas', {}).get(nome)
+                if f:
+                    f()
+            elif '_wifi_disparar' in g:
+                g['_wifi_disparar'](nome)
+        except Exception as e:
+            print('evento pelo Wi-Fi: erro', e)
     elif linha.startswith(b'GET /ping'):
         cl.write(b'HTTP/1.0 200 OK\r\n' + _CORS +
                  b'Content-Type: text/plain\r\nConnection: close\r\n\r\nbetablocks')

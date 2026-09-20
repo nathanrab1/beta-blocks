@@ -129,3 +129,4 @@ body {
 .wifi-info.error { color: var(--danger); }
 .wifi-send { display: flex; gap: 6px; margin-top: 8px; }
 .wifi-send select { flex: 1; font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+.btn.active { background: var(--ok); border-color: var(--ok); color: #fff; }

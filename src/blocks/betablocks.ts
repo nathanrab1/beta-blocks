@@ -58,6 +58,15 @@ export function defineBlocks(): void {
       tooltip: "Roda os blocos pendurados quando essa tecla é apertada no computador (com a placa conectada).",
     },
     {
+      type: "event_key_wifi",
+      message0: "quando apertar a tecla %1 pelo Wi-Fi",
+      args0: [{ type: "field_dropdown", name: "KEY", options: KEY_OPTIONS }],
+      nextStatement: null,
+      hat: "cap",
+      colour: WIFI_COLOUR,
+      tooltip: "Igual ao 'quando apertar a tecla', mas a tecla vai do computador para a placa pela rede, sem cabo.",
+    },
+    {
       type: "event_wifi",
       message0: "quando receber %1 pelo Wi-Fi",
       args0: [{ type: "field_input", name: "NAME", text: "botão 1" }],
@@ -320,6 +329,7 @@ export function defineBlocks(): void {
 
   pythonGenerator.forBlock["event_start"] = () => "";
   pythonGenerator.forBlock["event_key"] = () => "";
+  pythonGenerator.forBlock["event_key_wifi"] = () => "";
   pythonGenerator.forBlock["event_wifi"] = () => "";
 
   pythonGenerator.forBlock["wifi_connect"] = (block) => {
@@ -562,8 +572,15 @@ export function preamble(pin: number): string {
   ].join("\n");
 }
 
-const HAT_TYPES = ["event_start", "event_key", "event_wifi"];
+const HAT_TYPES = ["event_start", "event_key", "event_key_wifi", "event_wifi"];
 const WIFI_BLOCK_TYPES = ["event_wifi", "wifi_connect", "wifi_ip"];
+
+/** Teclas usadas pelos blocos de um tipo ("event_key" = cabo, "event_key_wifi" = rede). */
+export function keysOfType(workspace: Blockly.Workspace, type: "event_key" | "event_key_wifi"): Set<string> {
+  return new Set(
+    workspace.getTopBlocks(false).filter((b) => b.type === type).map((b) => b.getFieldValue("KEY") as string),
+  );
+}
 
 /** Nomes dos blocos "quando receber ... pelo Wi-Fi" do programa, na ordem. */
 export function wifiEventNames(workspace: Blockly.Workspace): string[] {
@@ -584,7 +601,7 @@ export function programCode(workspace: Blockly.Workspace): string {
   let code = "";
 
   // "quando apertar a tecla": cada pilha vira uma função registrada em _teclas
-  const keyHats = tops.filter((b) => b.type === "event_key");
+  const keyHats = tops.filter((b) => b.type === "event_key" || b.type === "event_key_wifi");
   const hasWifiHats = tops.some((b) => b.type === "event_wifi");
   if (keyHats.length > 0 || hasWifiHats) code += keysRuntimeCode();
   keyHats.forEach((hat, i) => {
@@ -1055,6 +1072,7 @@ export const toolbox = {
       contents: [
         { kind: "block", type: "wifi_connect" },
         { kind: "block", type: "event_wifi" },
+        { kind: "block", type: "event_key_wifi" },
         { kind: "block", type: "wifi_ip" },
       ],
     },

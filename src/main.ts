@@ -16,6 +16,7 @@ import {
   DISPLAY_MARK,
   WIFI_MARK,
   wifiEventNames,
+  keysOfType,
   usesOled,
   oledCode,
   type InputPins,
@@ -447,30 +448,6 @@ function onInputPinsChanged() {
 monitoredPins = collectInputPins(workspace);
 updateMonitorPanelVisibility();
 
-// ---------- teclas do computador -> placa ----------
-const KEY_NAMES: Record<string, string> = {
-  " ": "space",
-  ArrowUp: "up",
-  ArrowDown: "down",
-  ArrowLeft: "left",
-  ArrowRight: "right",
-  Enter: "enter",
-};
-const KNOWN_KEYS = new Set(KEY_OPTIONS.map(([, v]) => v));
-
-document.addEventListener("keydown", (e) => {
-  if (!board.connected || monitorMode !== "program" || busy) return;
-  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-  const target = e.target as HTMLElement | null;
-  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
-  if (Blockly.WidgetDiv.isVisible() || Blockly.DropDownDiv.isVisible()) return;
-  const name = KEY_NAMES[e.key] ?? e.key.toLowerCase();
-  if (!KNOWN_KEYS.has(name)) return;
-  e.preventDefault();
-  void board.write(`${KEY_MARK}${name}\n`).catch(() => {});
-  setStatus(`Tecla "${e.key === " " ? "espaço" : e.key}" enviada`, "ok");
-});
-
 // ---------- placa ----------
 const board = new Board();
 board.onData = handleSerialData;
@@ -588,6 +565,56 @@ async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Pro
     clearTimeout(t);
   }
 }
+
+// ---------- teclas do computador -> placa ----------
+const KEY_NAMES: Record<string, string> = {
+  " ": "space",
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  Enter: "enter",
+};
+const KNOWN_KEYS = new Set(KEY_OPTIONS.map(([, v]) => v));
+
+/**
+ * Teclas do computador -> placa. O bloco decide o caminho:
+ * "quando apertar a tecla" vai pelo cabo; "... pelo Wi-Fi" vai pela rede
+ * (receptor do boot.py, no último IP conhecido).
+ */
+document.addEventListener("keydown", (e) => {
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const target = e.target as HTMLElement | null;
+  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+  if (Blockly.WidgetDiv.isVisible() || Blockly.DropDownDiv.isVisible()) return;
+  const name = KEY_NAMES[e.key] ?? e.key.toLowerCase();
+  if (!KNOWN_KEYS.has(name)) return;
+
+  const viaUsb = keysOfType(workspace, "event_key").has(name) && board.connected && monitorMode === "program" && !busy;
+  const viaWifi = keysOfType(workspace, "event_key_wifi").has(name);
+  if (!viaUsb && !viaWifi) return;
+  e.preventDefault();
+  const rotulo = e.key === " " ? "espaço" : e.key;
+
+  if (viaUsb) {
+    void board.write(`${KEY_MARK}${name}\n`).catch(() => {});
+    setStatus(`Tecla "${rotulo}" enviada pelo cabo`, "ok");
+  }
+  if (viaWifi) {
+    if (location.protocol === "https:") {
+      setStatus("Tecla pelo Wi-Fi: esta página (HTTPS) não pode falar com a rede local. Abra o app local (npm run dev).", "error");
+      return;
+    }
+    const ip = wifiIp ?? localStorage.getItem(WIFI_IP_KEY);
+    if (!ip) {
+      setStatus("Tecla pelo Wi-Fi: ainda não sei o IP da placa. Envie um programa com 'conectar no Wi-Fi' pelo cabo uma vez.", "error");
+      return;
+    }
+    fetchWithTimeout(`http://${ip}:${OTA_PORT}/k?n=${encodeURIComponent(name)}`, {}, 3000)
+      .then(() => setStatus(`Tecla "${rotulo}" enviada pelo Wi-Fi para ${ip}`, "ok"))
+      .catch(() => setStatus(`Tecla "${rotulo}": a placa não respondeu em ${ip}. Está ligada e na rede?`, "error"));
+  }
+});
 
 btnUploadWifi.addEventListener("click", () =>
   run("Envio por Wi-Fi", async () => {
