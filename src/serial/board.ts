@@ -151,6 +151,16 @@ export class Board {
     await this.write("\x04"); // soft reset -> roda main.py
   }
 
+  /** Executa um trecho de código pela raw REPL e volta para a REPL normal. */
+  async execSnippet(code: string): Promise<string> {
+    await this.enterRawRepl();
+    try {
+      return await this.execRaw(code);
+    } finally {
+      await this.exitRawRepl();
+    }
+  }
+
   /** Verifica se há MicroPython respondendo. */
   async ping(): Promise<boolean> {
     try {

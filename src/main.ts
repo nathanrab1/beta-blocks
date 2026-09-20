@@ -8,6 +8,8 @@ import {
   starterWorkspace,
   collectInputPins,
   monitorCode,
+  programCode,
+  resetBoardCode,
   MONITOR_MARK,
   usesOled,
   oledCode,
@@ -18,7 +20,6 @@ import { Board, ReplError } from "./serial/board";
 import { flashMicroPython, loadFirmware } from "./serial/flasher";
 
 const STORAGE_KEY = "betablocks.workspace";
-const PIN_KEY = "betablocks.pin";
 
 // ---------- elementos ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -26,8 +27,6 @@ const btnConnect = $<HTMLButtonElement>("btn-connect");
 const btnUpload = $<HTMLButtonElement>("btn-upload");
 const btnStop = $<HTMLButtonElement>("btn-stop");
 const btnFlash = $<HTMLButtonElement>("btn-flash");
-const pinSelect = $<HTMLSelectElement>("pin-select");
-const pinCustom = $<HTMLInputElement>("pin-custom");
 const codeView = $<HTMLPreElement>("code-view");
 const consoleView = $<HTMLPreElement>("console-view");
 const statusText = $<HTMLSpanElement>("status-text");
@@ -63,29 +62,10 @@ document.querySelectorAll<HTMLButtonElement>(".tab").forEach((t) => {
 });
 
 // ---------- pino do LED ----------
+const LED_PIN = 21; // WS2812 da ESP32-S3-Zero
 function currentPin(): number {
-  const v = pinSelect.value === "custom" ? pinCustom.value : pinSelect.value;
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : 21;
+  return LED_PIN;
 }
-function restorePin() {
-  const saved = localStorage.getItem(PIN_KEY);
-  if (!saved) return;
-  if ([...pinSelect.options].some((o) => o.value === saved)) {
-    pinSelect.value = saved;
-  } else {
-    pinSelect.value = "custom";
-    pinCustom.value = saved;
-  }
-  pinCustom.hidden = pinSelect.value !== "custom";
-}
-function onPinChange() {
-  pinCustom.hidden = pinSelect.value !== "custom";
-  localStorage.setItem(PIN_KEY, String(currentPin()));
-  updateCode();
-}
-pinSelect.addEventListener("change", onPinChange);
-pinCustom.addEventListener("input", onPinChange);
 
 // ---------- Blockly ----------
 Blockly.setLocale(ptBr as unknown as Record<string, string>);
@@ -105,7 +85,7 @@ function generateCode(): string {
     preamble(currentPin()) +
     (usesOled(workspace) ? oledCode() : "") +
     monitorCode(collectInputPins(workspace)) +
-    pythonGenerator.workspaceToCode(workspace)
+    programCode(workspace)
   );
 }
 
@@ -125,6 +105,24 @@ function loadWorkspace() {
     try { state = JSON.parse(saved); } catch { /* usa o inicial */ }
   }
   Blockly.serialization.workspaces.load(state, workspace);
+  ensureStartBlock();
+}
+
+/** Se não houver "ao iniciar", cria um e pendura nele a primeira pilha de blocos. */
+function ensureStartBlock() {
+  const tops = workspace.getTopBlocks(true);
+  if (tops.some((b) => b.type === "event_start")) return;
+  const first = tops.find((b) => b.previousConnection);
+  const hat = workspace.newBlock("event_start");
+  (hat as Blockly.BlockSvg).initSvg();
+  (hat as Blockly.BlockSvg).render();
+  if (first) {
+    const xy = first.getRelativeToSurfaceXY();
+    hat.moveBy(xy.x, xy.y - 40);
+    hat.nextConnection!.connect(first.previousConnection!);
+  } else {
+    hat.moveBy(40, 40);
+  }
 }
 
 workspace.addChangeListener((e) => {
@@ -134,7 +132,6 @@ workspace.addChangeListener((e) => {
   onInputPinsChanged();
 });
 
-restorePin();
 loadWorkspace();
 updateCode();
 
@@ -256,11 +253,18 @@ function handleSerialData(text: string) {
 
 /** Liga o monitor pela REPL (usado quando nenhum programa está rodando). */
 async function startReplMonitor() {
-  const code = preamble(currentPin()) + monitorCode(monitoredPins);
-  await board.enterRawRepl();
-  await board.execRaw(code);
-  await board.exitRawRepl();
+  await board.execSnippet(preamble(currentPin()) + monitorCode(monitoredPins));
   monitorMode = "repl";
+}
+
+/** Para o programa e zera a placa (LED, PWM, portas, visor); liga o monitor se houver entradas. */
+async function stopAndReset() {
+  await board.stop();
+  await board.execSnippet(resetBoardCode(currentPin()));
+  monitorMode = null;
+  if (monitoredPins.analog.length + monitoredPins.digital.length > 0) {
+    await startReplMonitor();
+  }
 }
 
 let pinsChangeTimer: number | undefined;
@@ -333,8 +337,7 @@ async function connect() {
   setStatus("Verificando MicroPython…");
   const ok = await board.ping();
   if (ok) {
-    await board.write("\x04"); // retoma o programa gravado
-    monitorMode = "program";
+    await stopAndReset(); // placa "limpa": programa parado, LED apagado, portas soltas
     setStatus("Conectado — MicroPython pronto", "ok");
   } else {
     setStatus("Conectado, mas a placa não tem MicroPython — clique em \"Gravar MicroPython\" (só na primeira vez).", "error");
@@ -375,12 +378,8 @@ btnUpload.addEventListener("click", () =>
 
 btnStop.addEventListener("click", () =>
   run("Parar", async () => {
-    await board.stop();
-    setStatus("Programa interrompido", "ok");
-    if (monitoredPins.analog.length + monitoredPins.digital.length > 0) {
-      await startReplMonitor();
-      setStatus("Programa interrompido — monitor de entradas ligado", "ok");
-    }
+    await stopAndReset();
+    setStatus(monitorMode === "repl" ? "Programa parado — monitor de entradas ligado" : "Programa parado", "ok");
   }),
 );
 

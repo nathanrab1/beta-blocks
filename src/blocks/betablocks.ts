@@ -1,6 +1,7 @@
 import * as Blockly from "blockly";
 import { pythonGenerator, Order } from "blockly/python";
 
+const EVENT_COLOUR = 45;
 const LED_COLOUR = 10;
 const TIME_COLOUR = 40;
 const CONTROL_COLOUR = 120;
@@ -23,6 +24,14 @@ const NAMED_COLORS: Record<string, [number, number, number]> = {
 
 export function defineBlocks(): void {
   Blockly.defineBlocksWithJsonArray([
+    {
+      type: "event_start",
+      message0: "ao iniciar",
+      nextStatement: null,
+      hat: "cap",
+      colour: EVENT_COLOUR,
+      tooltip: "Tudo que estiver pendurado aqui roda quando a placa liga. Blocos soltos não rodam.",
+    },
     {
       type: "led_rgb",
       message0: "acender LED %1 verde %2 azul %3",
@@ -225,7 +234,7 @@ export function defineBlocks(): void {
       previousStatement: null,
       nextStatement: null,
       colour: OLED_COLOUR,
-      tooltip: "Escreve um texto (ou número) numa linha do visor. 128x64 tem 8 linhas; 128x32 tem 4.",
+      tooltip: "Escreve um texto (ou número) a partir de uma linha do visor. Textos longos quebram em várias linhas, sem cortar palavras.",
     },
     {
       type: "oled_clear",
@@ -249,6 +258,8 @@ export function defineBlocks(): void {
   ]);
 
   // ---- Geradores Python ----
+
+  pythonGenerator.forBlock["event_start"] = () => "";
 
   pythonGenerator.forBlock["led_rgb"] = (block, gen) => {
     const r = gen.valueToCode(block, "R", Order.NONE) || "0";
@@ -330,6 +341,53 @@ export function defineBlocks(): void {
   };
 }
 
+/**
+ * Código que "zera" a placa: apaga o LED RGB, desliga PWMs e o monitor,
+ * apaga o visor e solta as portas (entrada, sem pull). Roda na REPL,
+ * no mesmo namespace do main.py, por isso enxerga _pwms, _bb_timer e oled.
+ */
+export function resetBoardCode(ledPin: number): string {
+  // GPIOs livres do ESP32-S3 (fora USB 19/20, flash/PSRAM 26-32 e 35-37, strapping 0/45/46)
+  const pins = [
+    ...Array.from({ length: 18 }, (_, i) => i + 1),
+    21,
+    ...Array.from({ length: 12 }, (_, i) => i + 33),
+    47,
+    48,
+  ].filter((p) => p !== ledPin);
+  return [
+    "from machine import Pin",
+    "from neopixel import NeoPixel",
+    "try:",
+    "    _bb_timer.deinit()",
+    "except Exception:",
+    "    pass",
+    "try:",
+    "    for _x in _pwms.values():",
+    "        _x.deinit()",
+    "    _pwms.clear()",
+    "except Exception:",
+    "    pass",
+    "try:",
+    "    oled.fill(0)",
+    "    oled.show()",
+    "except Exception:",
+    "    pass",
+    "try:",
+    `    _np = NeoPixel(Pin(${ledPin}, Pin.OUT), 1)`,
+    "    _np[0] = (0, 0, 0)",
+    "    _np.write()",
+    "except Exception:",
+    "    pass",
+    `for _p in [${pins.join(", ")}]:`,
+    "    try:",
+    "        Pin(_p, Pin.IN)",
+    "    except Exception:",
+    "        pass",
+    "",
+  ].join("\n");
+}
+
 /** Cabeçalho fixo do programa: imports e função auxiliar do LED. */
 export function preamble(pin: number): string {
   return [
@@ -370,6 +428,28 @@ export function preamble(pin: number): string {
   ].join("\n");
 }
 
+/** Gera o código só das pilhas penduradas em "ao iniciar"; blocos soltos são ignorados. */
+export function programCode(workspace: Blockly.Workspace): string {
+  pythonGenerator.init(workspace);
+  let code = "";
+  for (const block of workspace.getTopBlocks(true)) {
+    if (block.type !== "event_start") continue;
+    let c = pythonGenerator.blockToCode(block);
+    if (Array.isArray(c)) c = c[0];
+    if (c) code += c;
+  }
+  return pythonGenerator.finish(code);
+}
+
+/** Blocos que fazem parte do programa (pendurados em "ao iniciar"). */
+export function programBlocks(workspace: Blockly.Workspace): Blockly.Block[] {
+  const result: Blockly.Block[] = [];
+  for (const top of workspace.getTopBlocks(false)) {
+    if (top.type === "event_start") result.push(...top.getDescendants(false));
+  }
+  return result;
+}
+
 export interface InputPins {
   analog: number[];
   digital: number[];
@@ -379,7 +459,7 @@ export interface InputPins {
 export function collectInputPins(workspace: Blockly.Workspace): InputPins {
   const analog = new Set<number>();
   const digital = new Set<number>();
-  for (const block of workspace.getAllBlocks(false)) {
+  for (const block of programBlocks(workspace)) {
     if (block.isInsertionMarker()) continue;
     const pin = Number(block.getFieldValue("PIN"));
     if (!Number.isFinite(pin)) continue;
@@ -427,7 +507,7 @@ export function monitorCode(pins: InputPins): string {
 const OLED_BLOCK_TYPES = ["oled_config", "oled_text", "oled_clear"];
 
 export function usesOled(workspace: Blockly.Workspace): boolean {
-  return workspace.getAllBlocks(false).some((b) => OLED_BLOCK_TYPES.includes(b.type));
+  return programBlocks(workspace).some((b) => OLED_BLOCK_TYPES.includes(b.type));
 }
 
 /** Funções auxiliares do visor OLED (precisa do arquivo ssd1306.py na placa). */
@@ -453,9 +533,33 @@ export function oledCode(): string {
     "def visor_texto(txt, linha):",
     "    if oled is None:",
     "        return",
-    "    y = (int(linha) - 1) * 8",
-    "    oled.fill_rect(0, y, oled.width, 8, 0)",
-    "    oled.text(str(txt), 0, y, 1)",
+    "    cols = oled.width // 8",
+    "    max_linhas = oled.height // 8",
+    "    # quebra em linhas sem cortar palavras (palavra maior que a linha e cortada)",
+    "    saida = []",
+    "    atual = ''",
+    "    for p in str(txt).split(' '):",
+    "        while len(p) > cols:",
+    "            if atual:",
+    "                saida.append(atual)",
+    "                atual = ''",
+    "            saida.append(p[:cols])",
+    "            p = p[cols:]",
+    "        if not atual:",
+    "            atual = p",
+    "        elif len(atual) + 1 + len(p) <= cols:",
+    "            atual += ' ' + p",
+    "        else:",
+    "            saida.append(atual)",
+    "            atual = p",
+    "    saida.append(atual)",
+    "    y = int(linha) - 1",
+    "    for l in saida:",
+    "        if y >= max_linhas:",
+    "            break",
+    "        oled.fill_rect(0, y * 8, oled.width, 8, 0)",
+    "        oled.text(l, 0, y * 8, 1)",
+    "        y += 1",
     "    oled.show()",
     "",
     "def visor_limpar():",
@@ -471,6 +575,12 @@ export function oledCode(): string {
 export const toolbox = {
   kind: "categoryToolbox",
   contents: [
+    {
+      kind: "category",
+      name: "Eventos",
+      colour: EVENT_COLOUR,
+      contents: [{ kind: "block", type: "event_start" }],
+    },
     {
       kind: "category",
       name: "LED",
@@ -608,9 +718,12 @@ export const starterWorkspace = {
     languageVersion: 0,
     blocks: [
       {
-        type: "forever",
+        type: "event_start",
         x: 40,
         y: 40,
+        next: {
+          block: {
+        type: "forever",
         inputs: {
           DO: {
             block: {
@@ -654,6 +767,8 @@ export const starterWorkspace = {
                 },
               },
             },
+          },
+        },
           },
         },
       },
