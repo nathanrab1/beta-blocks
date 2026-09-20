@@ -1,0 +1,114 @@
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --border: #dfe2e8;
+  --text: #1f2430;
+  --muted: #6b7280;
+  --accent: #2f80ed;
+  --accent-dark: #1f6dd6;
+  --danger: #e04b4b;
+  --ok: #27ae60;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand { display: flex; align-items: center; gap: 8px; font-size: 18px; }
+.brand-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: linear-gradient(135deg, #ff3b3b, #2fd05a, #2f80ed);
+}
+.brand-sub { color: var(--muted); font-size: 13px; }
+
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.field { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.field select, .field input {
+  font-size: 13px; padding: 5px 8px;
+  border: 1px solid var(--border); border-radius: 6px; background: #fff;
+}
+.field input { width: 64px; }
+
+.btn {
+  font-size: 14px; padding: 7px 14px; border-radius: 8px;
+  border: 1px solid var(--border); background: #fff; color: var(--text); cursor: pointer;
+}
+.btn:hover:not(:disabled) { background: #f0f2f5; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-dark); }
+.btn-ghost { color: var(--muted); }
+
+.workspace-area { flex: 1; display: flex; min-height: 0; }
+#blockly-div { flex: 1; min-width: 0; }
+
+.side-panel {
+  width: 360px; display: flex; flex-direction: column;
+  background: var(--panel); border-left: 1px solid var(--border);
+}
+.tabs { display: flex; border-bottom: 1px solid var(--border); }
+.tab {
+  flex: 1; padding: 8px; font-size: 13px; background: none; border: none;
+  border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer;
+}
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.panel-content {
+  flex: 1; margin: 0; padding: 12px; overflow: auto;
+  font: 12.5px/1.5 "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap;
+}
+#console-view { background: #14161b; color: #d5d9e0; }
+
+.statusbar {
+  display: flex; justify-content: space-between;
+  padding: 6px 16px; font-size: 12.5px; color: var(--muted);
+  background: var(--panel); border-top: 1px solid var(--border);
+}
+.statusbar.ok { color: var(--ok); }
+.statusbar.error { color: var(--danger); }
+
+.modal {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.5); z-index: 100;
+}
+.modal-box { background: #fff; padding: 24px 32px; border-radius: 12px; max-width: 420px; }
+.modal-box p { white-space: pre-line; line-height: 1.5; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+.monitor { padding: 10px 12px; border-bottom: 1px solid var(--border); background: #fafbfc; }
+.monitor h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.monitor-cards { display: flex; flex-direction: column; gap: 6px; }
+.mcard {
+  display: grid; grid-template-columns: 70px 1fr 52px; align-items: center; gap: 10px;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; font-size: 13px;
+}
+.mcard .mlabel { font-weight: 600; }
+.mcard .mbar { height: 8px; border-radius: 4px; background: #e9ecf1; overflow: hidden; }
+.mcard .mbar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.15s; }
+.mcard .mvalue { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.mcard .mdot { width: 14px; height: 14px; border-radius: 50%; background: #d0d4db; justify-self: start; }
+.mcard.on .mdot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.mcard.on .mvalue { color: var(--ok); }
+.mcard.stale { opacity: 0.55; }

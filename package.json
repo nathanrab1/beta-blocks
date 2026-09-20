@@ -1,0 +1,21 @@
+{
+  "name": "beta-blocks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Programação em blocos para ESP32-S3-Zero (MicroPython + Web Serial)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "blockly": "^13.3.0",
+    "esptool-js": "^0.6.1"
+  },
+  "devDependencies": {
+    "@types/w3c-web-serial": "^1.0.8",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  }
+}

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Beta Blocks</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <strong>Beta Blocks</strong>
+        <span class="brand-sub">ESP32-S3-Zero</span>
+      </div>
+
+      <div class="toolbar">
+        <label class="field">
+          Pino do LED
+          <select id="pin-select">
+            <option value="21" selected>GPIO 21 (S3-Zero)</option>
+            <option value="48">GPIO 48</option>
+            <option value="38">GPIO 38</option>
+            <option value="custom">Outro…</option>
+          </select>
+          <input id="pin-custom" type="number" min="0" max="48" value="21" hidden />
+        </label>
+
+        <button id="btn-connect" class="btn">Conectar</button>
+        <button id="btn-upload" class="btn btn-primary" disabled>▶ Enviar</button>
+        <button id="btn-stop" class="btn" disabled>■ Parar</button>
+        <button id="btn-flash" class="btn btn-ghost" disabled>Gravar MicroPython</button>
+      </div>
+    </header>
+
+    <main class="workspace-area">
+      <div id="blockly-div"></div>
+
+      <aside class="side-panel">
+        <section id="monitor-panel" class="monitor" hidden>
+          <h3>Entradas ao vivo</h3>
+          <div id="monitor-cards" class="monitor-cards"></div>
+        </section>
+        <!-- Código Python e Console ficam ocultos (remova o atributo hidden para reativar) -->
+        <div class="tabs" hidden>
+          <button class="tab active" data-tab="code">Código Python</button>
+          <button class="tab" data-tab="console">Console</button>
+        </div>
+        <pre id="code-view" class="panel-content" hidden></pre>
+        <pre id="console-view" class="panel-content" hidden></pre>
+      </aside>
+    </main>
+
+    <footer class="statusbar">
+      <span id="status-text">Desconectado</span>
+      <span id="status-progress"></span>
+    </footer>
+
+    <div id="unsupported" class="modal" hidden>
+      <div class="modal-box">
+        <h2>Navegador sem Web Serial</h2>
+        <p>Use o <b>Google Chrome</b> ou <b>Microsoft Edge</b> (desktop) para conectar ao ESP32.</p>
+      </div>
+    </div>
+
+    <div id="flash-modal" class="modal" hidden>
+      <div class="modal-box">
+        <h2>Gravar MicroPython</h2>
+        <p id="flash-instructions"></p>
+        <div class="modal-actions">
+          <button id="btn-flash-cancel" class="btn">Cancelar</button>
+          <button id="btn-flash-go" class="btn btn-primary">Escolher porta e gravar</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
