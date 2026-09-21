@@ -27,6 +27,39 @@ def _urldecode(b):
     return bytes(out).decode()
 
 
+def _ota_limpar():
+    """Antes de reiniciar com um programa novo: apaga o visor, o LED e as portas.
+    O visor e o LED guardam o ultimo estado mesmo depois do reset."""
+    g = globals()
+    try:
+        o = g.get('oled')
+        if o is not None:
+            g['oled'] = None  # o programa antigo para de desenhar
+            time.sleep_ms(150)
+            o.fill(0)
+            o.show()
+    except Exception:
+        pass
+    try:
+        for t in ('_bb_timer', '_vis_timer', '_key_timer', '_wifi_timer'):
+            if t in g:
+                g[t].deinit()
+    except Exception:
+        pass
+    try:
+        for p in g.get('_pwms', {}).values():
+            p.deinit()
+    except Exception:
+        pass
+    try:
+        from neopixel import NeoPixel
+        np = NeoPixel(machine.Pin(21, machine.Pin.OUT), 1)
+        np[0] = (0, 0, 0)
+        np.write()
+    except Exception:
+        pass
+
+
 def _ota_atender(cl):
     cl.settimeout(5)
     req = b''
@@ -76,7 +109,8 @@ def _ota_atender(cl):
                 f.write(conteudo)
         cl.write(b'HTTP/1.0 200 OK\r\n' + _CORS + b'Connection: close\r\n\r\nok')
         cl.close()
-        time.sleep_ms(300)
+        time.sleep_ms(200)
+        _ota_limpar()
         machine.reset()
     else:
         cl.write(b'HTTP/1.0 404 Not Found\r\nConnection: close\r\n\r\n')

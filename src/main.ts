@@ -89,6 +89,16 @@ const workspace = Blockly.inject("blockly-div", {
   move: { scrollbars: true, drag: true, wheel: false },
 });
 
+// Sem navegação por teclado entre blocos: as setas ficam livres para os jogos
+// e para os blocos "quando apertar a tecla". Ficam só copiar/colar/desfazer/apagar.
+{
+  const n = Blockly.ShortcutItems.names;
+  const manter = new Set<string>([n.ESCAPE, n.DELETE, n.COPY, n.CUT, n.PASTE, n.UNDO, n.REDO, n.DUPLICATE, n.CLEANUP]);
+  for (const nome of Object.keys(Blockly.ShortcutRegistry.registry.getRegistry())) {
+    if (!manter.has(nome)) Blockly.ShortcutRegistry.registry.unregister(nome);
+  }
+}
+
 // "Duplicar" do menu de contexto: leva junto toda a corrente de blocos abaixo
 function duplicateWithChain(block: Blockly.BlockSvg) {
   const state = Blockly.serialization.blocks.save(block, { addCoordinates: true, addNextBlocks: true });

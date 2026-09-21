@@ -589,6 +589,8 @@ export function preamble(pin: number): string {
     "    np[0] = (int(r), int(g), int(b))",
     "    np.write()",
     "",
+    "led_rgb(0, 0, 0)  # comeca sempre com o LED apagado",
+    "",
     "_pwms = {}",
     "",
     "def porta_ligar(n, on):",
