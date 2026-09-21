@@ -44,6 +44,7 @@ body {
 .brand-sub { color: var(--muted); font-size: 13px; }
 
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.toolbar-sep { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
 
 .field { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .field select, .field input {
@@ -119,10 +120,11 @@ body {
 
 /* editor de desenho do visor */
 .draw-box { max-width: none; }
-.draw-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.draw-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; max-width: 540px; }
+.draw-tools .btn { padding: 6px 10px; font-size: 13px; }
 .draw-tools .tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .draw-frame { padding: 12px; background: #0b0d12; border-radius: 10px; display: inline-block; }
-.draw-canvas { display: block; image-rendering: pixelated; background: #000; cursor: crosshair; touch-action: none; }
+.draw-canvas { display: block; image-rendering: pixelated; background: #000; cursor: none; touch-action: none; }
 
 .wifi-info { font-size: 13px; line-height: 1.5; }
 .wifi-info .url { display: block; font: 600 18px/1.3 "SF Mono", Menlo, monospace; color: var(--accent); margin: 4px 0; user-select: all; }
@@ -130,3 +132,5 @@ body {
 .wifi-send { display: flex; gap: 6px; margin-top: 8px; }
 .wifi-send select { flex: 1; font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
 .btn.active { background: var(--ok); border-color: var(--ok); color: #fff; }
+.draw-stamps .stamp-btn { font-size: 18px; padding: 3px 8px; line-height: 1; }
+.draw-stamps select { font-size: 13px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }

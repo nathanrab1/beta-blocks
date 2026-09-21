@@ -183,6 +183,56 @@ workspace.addChangeListener((e) => {
 loadWorkspace();
 updateCode();
 
+// ---------- baixar / abrir projeto ----------
+const PROJECT_FORMAT = "beta-blocks";
+
+$("btn-save").addEventListener("click", () => {
+  const project = {
+    format: PROJECT_FORMAT,
+    version: 1,
+    savedAt: new Date().toISOString(),
+    workspace: Blockly.serialization.workspaces.save(workspace),
+  };
+  const blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const nome = prompt("Nome do projeto:", "meu-projeto")?.trim();
+  if (!nome) return;
+  a.href = url;
+  a.download = `${nome.replace(/[^\w.-]+/g, "-")}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus(`Projeto salvo: ${a.download}`, "ok");
+});
+
+const fileLoad = $<HTMLInputElement>("file-load");
+$("btn-load").addEventListener("click", () => {
+  fileLoad.value = "";
+  fileLoad.click();
+});
+fileLoad.addEventListener("change", async () => {
+  const file = fileLoad.files?.[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    // aceita o arquivo do Beta Blocks ou um workspace do Blockly puro
+    const state = data.format === PROJECT_FORMAT ? data.workspace : data.blocks ? data : null;
+    if (!state) throw new Error("não é um projeto do Beta Blocks");
+    if (workspace.getAllBlocks(false).length > 0 && !confirm("Substituir o projeto atual pelo arquivo aberto?")) return;
+    Blockly.Events.setGroup(true);
+    try {
+      workspace.clear();
+      Blockly.serialization.workspaces.load(state, workspace);
+      ensureStartBlock();
+    } finally {
+      Blockly.Events.setGroup(false);
+    }
+    setStatus(`Projeto aberto: ${file.name}`, "ok");
+  } catch (err) {
+    setStatus(`Não deu para abrir ${file.name}: ${(err as Error).message}`, "error");
+  }
+});
+
 // ---------- entradas ao vivo ----------
 const monitorPanel = $("monitor-panel");
 const monitorCards = $("monitor-cards");
