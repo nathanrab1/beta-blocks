@@ -7,6 +7,7 @@
  */
 
 import { STAMPS, type Stamp } from "./stamps";
+import { textPixels as fontPixels } from "./font5x7";
 
 export const DRAW_W = 128;
 export const DRAW_H = 64;
@@ -69,10 +70,12 @@ function paintPixels(canvas: HTMLCanvasElement, pixels: Uint8Array) {
 export function openDrawEditor(initialB64: string): Promise<string | null> {
   return new Promise((resolve) => {
     const pixels = b64ToPixels(initialB64);
-    type Tool = "brush" | "eraser" | "line" | "circle" | "circleFill" | "rect" | "rectFill" | "stamp";
+    type Tool = "brush" | "eraser" | "line" | "circle" | "circleFill" | "rect" | "rectFill" | "stamp" | "text";
     let tool: Tool = "brush";
     let stamp: Stamp = STAMPS[0];
     let stampScale = 1;
+    let text = "";
+    let textScale = 1;
     let brush = 2;
     let drawing = false;
     let last: [number, number] | null = null;
@@ -97,10 +100,19 @@ export function openDrawEditor(initialB64: string): Promise<string | null> {
           <button class="btn draw-clear">Limpar</button>
         </div>
         <div class="draw-tools draw-stamps">
-          <span class="field">Emojis:</span>
-          ${STAMPS.map((st) => `<button class="btn tool stamp-btn" data-tool="stamp" data-stamp="${st.id}" title="Carimbar ${st.label}">${st.label}</button>`).join("")}
+          <button class="btn stamp-open" title="Escolher emoji">${STAMPS[0].label} Emojis ▾</button>
+          <div class="stamp-grid" hidden>
+            ${STAMPS.map((st) => `<button class="btn tool stamp-btn" data-tool="stamp" data-stamp="${st.id}" title="Carimbar ${st.label}">${st.label}</button>`).join("")}
+          </div>
           <label class="field">Tamanho
             <select class="stamp-scale"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option></select>
+          </label>
+        </div>
+        <div class="draw-tools draw-text">
+          <button class="btn tool" data-tool="text" title="Texto">T Texto</button>
+          <input type="text" class="text-input" placeholder="Digite o texto..." maxlength="40">
+          <label class="field">Tamanho
+            <select class="text-scale"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option></select>
           </label>
         </div>
         <div class="draw-frame"><canvas class="draw-canvas" width="${DRAW_W}" height="${DRAW_H}"></canvas></div>
@@ -126,16 +138,50 @@ export function openDrawEditor(initialB64: string): Promise<string | null> {
       sizeVal.textContent = String(brush);
     });
 
+    const stampOpen = modal.querySelector<HTMLButtonElement>(".stamp-open")!;
+    const stampGrid = modal.querySelector<HTMLElement>(".stamp-grid")!;
     modal.querySelectorAll<HTMLButtonElement>(".tool").forEach((b) => {
       b.addEventListener("click", () => {
         tool = b.dataset.tool as Tool;
-        if (b.dataset.stamp) stamp = STAMPS.find((st) => st.id === b.dataset.stamp) ?? STAMPS[0];
+        if (b.dataset.stamp) {
+          stamp = STAMPS.find((st) => st.id === b.dataset.stamp) ?? STAMPS[0];
+          stampOpen.textContent = `${stamp.label} Emojis ▾`;
+          stampGrid.hidden = true;
+        }
         modal.querySelectorAll(".tool").forEach((t) => t.classList.toggle("active", t === b));
+        stampOpen.classList.toggle("active", tool === "stamp");
+        if (tool === "text" && document.activeElement !== textInput) textInput.focus();
       });
+    });
+    // botão de emojis: abre/fecha a malha e já seleciona o carimbo atual
+    stampOpen.addEventListener("click", () => {
+      const abrir = stampGrid.hidden;
+      if (tool !== "stamp") modal.querySelector<HTMLButtonElement>(`.stamp-btn[data-stamp="${stamp.id}"]`)!.click();
+      stampGrid.hidden = !abrir;
+      repaint();
+    });
+    // clique fora da malha fecha
+    modal.addEventListener("pointerdown", (e) => {
+      if (!stampGrid.hidden && !stampGrid.contains(e.target as Node) && e.target !== stampOpen) stampGrid.hidden = true;
     });
     const scaleSelect = modal.querySelector<HTMLSelectElement>(".stamp-scale")!;
     scaleSelect.addEventListener("change", () => {
       stampScale = Number(scaleSelect.value);
+      repaint();
+    });
+
+    const textInput = modal.querySelector<HTMLInputElement>(".text-input")!;
+    textInput.addEventListener("input", () => {
+      text = textInput.value;
+      repaint();
+    });
+    // digitar no campo já seleciona a ferramenta de texto
+    textInput.addEventListener("focus", () => {
+      modal.querySelector<HTMLButtonElement>('.tool[data-tool="text"]')!.click();
+    });
+    const textScaleSelect = modal.querySelector<HTMLSelectElement>(".text-scale")!;
+    textScaleSelect.addEventListener("change", () => {
+      textScale = Number(textScaleSelect.value);
       repaint();
     });
 
@@ -187,15 +233,21 @@ export function openDrawEditor(initialB64: string): Promise<string | null> {
       return out;
     };
 
+    // pixels acesos do texto digitado, com o canto superior esquerdo em (x, y)
+    const textPixels = (x: number, y: number): [number, number][] =>
+      fontPixels(text, x, y, textScale).filter(([px, py]) => px >= 0 && py >= 0 && px < DRAW_W && py < DRAW_H);
+
     // cursor: pincel/linhas mostram a área que vai pintar; borracha mostra o contorno
     // em branco e escurece o que vai apagar
     const drawCursor = () => {
       if (!hover) return;
       const ctx = canvas.getContext("2d")!;
       const area = footprint(hover[0], hover[1]);
-      if (tool === "stamp") {
+      if (tool === "stamp" || tool === "text") {
         ctx.fillStyle = "rgba(47, 128, 237, 0.85)";
-        for (const [x, y] of stampPixels(hover[0], hover[1])) ctx.fillRect(x, y, 1, 1);
+        const area = tool === "stamp" ? stampPixels(hover[0], hover[1]) : textPixels(hover[0], hover[1]);
+        for (const [x, y] of area) ctx.fillRect(x, y, 1, 1);
+        if (tool === "text" && !area.length) ctx.fillRect(hover[0], hover[1], 1, 1); // sem texto: só o ponto
       } else if (tool === "eraser") {
         const dentro = new Set(area.map(([x, y]) => y * DRAW_W + x));
         for (const [x, y] of area) {
@@ -272,14 +324,15 @@ export function openDrawEditor(initialB64: string): Promise<string | null> {
       }
     };
 
-    const isShapeTool = () => tool !== "brush" && tool !== "eraser" && tool !== "stamp";
+    const isShapeTool = () => tool !== "brush" && tool !== "eraser" && tool !== "stamp" && tool !== "text";
 
     canvas.addEventListener("pointerdown", (e) => {
       drawing = true;
       canvas.setPointerCapture(e.pointerId);
       const p = toPixel(e);
-      if (tool === "stamp") {
-        for (const [x, y] of stampPixels(p[0], p[1])) pixels[y * DRAW_W + x] = 1;
+      if (tool === "stamp" || tool === "text") {
+        const area = tool === "stamp" ? stampPixels(p[0], p[1]) : textPixels(p[0], p[1]);
+        for (const [x, y] of area) pixels[y * DRAW_W + x] = 1;
         drawing = false;
       } else if (isShapeTool()) {
         start = p;
@@ -319,7 +372,11 @@ export function openDrawEditor(initialB64: string): Promise<string | null> {
       modal.remove();
       resolve(result);
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(null); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (document.activeElement === textInput) { textInput.blur(); return; }
+      close(null);
+    };
     document.addEventListener("keydown", onKey);
     modal.querySelector(".draw-cancel")!.addEventListener("click", () => close(null));
     modal.querySelector(".draw-save")!.addEventListener("click", () => close(pixelsToB64(pixels)));
