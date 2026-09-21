@@ -50,7 +50,7 @@ public/firmware/           MicroPython v1.29.0 (ESP32_GENERIC_S3)
 1. Uma vez pelo cabo: enviar um programa com o bloco `conectar no Wi-Fi`. Isso instala o `boot.py` (receptor na porta 8266) e salva a rede na placa (`wifi.json`).
 2. Depois, com a placa em qualquer fonte: **📶 Enviar por Wi-Fi** → confirmar o IP → a placa grava e reinicia.
 
-Só funciona com o app aberto local (`npm run dev`); páginas HTTPS (GitHub Pages) não podem falar com a rede local.
+No GitHub Pages (HTTPS) o Chrome pede permissão de "acesso à rede local" na primeira vez — é preciso permitir. Se o navegador não perguntar nem deixar, use o app local (`npm run dev`).
 
 ### Se der "Failed to fetch" no Chrome
 

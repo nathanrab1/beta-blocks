@@ -324,11 +324,11 @@ function updateWifiSendControl() {
 $("btn-wifi-send").addEventListener("click", async () => {
   const name = wifiSendName.value;
   if (!name) return;
-  // Página HTTPS (GitHub Pages) não pode chamar http://<ip>; nesse caso vai pelo cabo USB
-  const viaWifi = wifiIp !== null && location.protocol !== "https:";
+  // tenta pela rede quando o IP é conhecido; se falhar (ou sem IP) vai pelo cabo USB
+  const viaWifi = wifiIp !== null;
   if (viaWifi) {
     try {
-      await fetch(`http://${wifiIp}/b?n=${encodeURIComponent(name)}`, { mode: "no-cors" });
+      await fetchLocal(`http://${wifiIp}/b?n=${encodeURIComponent(name)}`, { mode: "no-cors" }, 3000);
       setStatus(`"${name}" enviado pelo Wi-Fi`, "ok");
       return;
     } catch {
@@ -616,6 +616,31 @@ async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Pro
   }
 }
 
+/**
+ * Chamada HTTP para a placa na rede local. Numa página HTTPS o navegador
+ * bloqueia http://<ip> (conteúdo misto), a não ser que a chamada declare que o
+ * destino é a rede local ("targetAddressSpace") — aí o Chrome pede permissão
+ * de acesso à rede local ao usuário. Tenta os nomes usados pelas versões do Chrome.
+ */
+async function fetchLocal(url: string, init: RequestInit, ms: number): Promise<Response> {
+  if (location.protocol !== "https:") return fetchWithTimeout(url, init, ms);
+  let lastErr: unknown;
+  for (const space of ["local", "private"]) {
+    try {
+      return await fetchWithTimeout(url, { ...init, targetAddressSpace: space } as RequestInit, ms);
+    } catch (err) {
+      lastErr = err;
+      // valor não reconhecido pelo navegador: tenta o outro nome; erro de rede: desiste
+      if (!(err instanceof TypeError && /enum|AddressSpace/i.test(err.message))) break;
+    }
+  }
+  throw lastErr;
+}
+
+const AJUDA_HTTPS =
+  "Se o Chrome perguntou sobre acesso à rede local, permita e tente de novo. " +
+  "Se não perguntou, este navegador não deixa páginas HTTPS falarem com a placa — abra o app local (npm run dev).";
+
 // ---------- teclas do computador -> placa ----------
 const KEY_NAMES: Record<string, string> = {
   " ": "space",
@@ -651,29 +676,25 @@ document.addEventListener("keydown", (e) => {
     setStatus(`Tecla "${rotulo}" enviada pelo cabo`, "ok");
   }
   if (viaWifi) {
-    if (location.protocol === "https:") {
-      setStatus("Tecla pelo Wi-Fi: esta página (HTTPS) não pode falar com a rede local. Abra o app local (npm run dev).", "error");
-      return;
-    }
     const ip = wifiIp ?? localStorage.getItem(WIFI_IP_KEY);
     if (!ip) {
       setStatus("Tecla pelo Wi-Fi: ainda não sei o IP da placa. Envie um programa com 'conectar no Wi-Fi' pelo cabo uma vez.", "error");
       return;
     }
-    fetchWithTimeout(`http://${ip}:${OTA_PORT}/k?n=${encodeURIComponent(name)}`, {}, 3000)
+    fetchLocal(`http://${ip}:${OTA_PORT}/k?n=${encodeURIComponent(name)}`, {}, 3000)
       .then(() => setStatus(`Tecla "${rotulo}" enviada pelo Wi-Fi para ${ip}`, "ok"))
-      .catch(() => setStatus(`Tecla "${rotulo}": a placa não respondeu em ${ip}. Está ligada e na rede?`, "error"));
+      .catch(() =>
+        setStatus(
+          `Tecla "${rotulo}": a placa não respondeu em ${ip}. ` +
+            (location.protocol === "https:" ? AJUDA_HTTPS : "Está ligada e na rede?"),
+          "error",
+        ),
+      );
   }
 });
 
 btnUploadWifi.addEventListener("click", () =>
   run("Envio por Wi-Fi", async () => {
-    if (location.protocol === "https:") {
-      throw new Error(
-        "O navegador não deixa esta página (HTTPS) falar com a placa na rede local. " +
-          "Abra o Beta Blocks pelo computador (npm run dev) para enviar por Wi-Fi, ou use o cabo.",
-      );
-    }
     const last = wifiIp ?? localStorage.getItem(WIFI_IP_KEY) ?? "";
     const ip = prompt("Endereço (IP) da placa na rede:", last)?.trim();
     if (!ip) {
@@ -684,22 +705,24 @@ btnUploadWifi.addEventListener("click", () =>
 
     setStatus(`Procurando a placa em ${ip}…`);
     try {
-      const r = await fetchWithTimeout(`${base}/ping`, {}, 4000);
+      const r = await fetchLocal(`${base}/ping`, {}, 4000);
       if ((await r.text()) !== "betablocks") throw new Error("resposta inesperada");
     } catch (err) {
       const motivo = err instanceof DOMException && err.name === "AbortError"
         ? "tempo esgotado (4 s sem resposta)"
         : `${(err as Error).name}: ${(err as Error).message}`;
       throw new Error(
-        `A placa não respondeu em ${ip}:${OTA_PORT} — ${motivo}. Ela precisa estar ligada, na mesma rede, ` +
-          "e já ter recebido um programa pelo cabo com o bloco 'conectar no Wi-Fi'.",
+        `A placa não respondeu em ${ip}:${OTA_PORT} — ${motivo}. ` +
+          (location.protocol === "https:"
+            ? AJUDA_HTTPS
+            : "Ela precisa estar ligada, na mesma rede, e já ter recebido um programa pelo cabo com o bloco 'conectar no Wi-Fi'."),
       );
     }
 
     setStatus("Enviando programa por Wi-Fi…");
     const files = { ...programFiles(), "main.py": generateCode() };
     // text/plain evita o preflight CORS; o boot.py lê o corpo como JSON
-    const r = await fetchWithTimeout(
+    const r = await fetchLocal(
       `${base}/programa`,
       { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(files) },
       15000,
