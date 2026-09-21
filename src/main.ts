@@ -166,22 +166,45 @@ function loadWorkspace() {
   ensureStartBlock();
 }
 
-/** Se não houver "ao iniciar", cria um e pendura nele a primeira pilha de blocos. */
+/**
+ * Existe sempre um único "ao iniciar", que não pode ser apagado nem duplicado.
+ * Se não houver, cria um e pendura nele a primeira pilha de blocos; se houver
+ * mais de um (projeto antigo, colar), os extras são removidos e seus blocos
+ * ficam soltos no espaço de trabalho.
+ */
 function ensureStartBlock() {
   const tops = workspace.getTopBlocks(true);
-  if (tops.some((b) => b.type === "event_start")) return;
-  const first = tops.find((b) => b.previousConnection);
-  const hat = workspace.newBlock("event_start");
-  (hat as Blockly.BlockSvg).initSvg();
-  (hat as Blockly.BlockSvg).render();
-  if (first) {
-    const xy = first.getRelativeToSurfaceXY();
-    hat.moveBy(xy.x, xy.y - 40);
-    hat.nextConnection!.connect(first.previousConnection!);
-  } else {
-    hat.moveBy(40, 40);
+  const hats = tops.filter((b) => b.type === "event_start");
+  if (hats.length === 0) {
+    const first = tops.find((b) => b.previousConnection);
+    const hat = workspace.newBlock("event_start");
+    (hat as Blockly.BlockSvg).initSvg();
+    (hat as Blockly.BlockSvg).render();
+    if (first) {
+      const xy = first.getRelativeToSurfaceXY();
+      hat.moveBy(xy.x, xy.y - 40);
+      hat.nextConnection!.connect(first.previousConnection!);
+    } else {
+      hat.moveBy(40, 40);
+    }
+    hats.push(hat);
   }
+  hats[0].setDeletable(false);
+  for (const extra of hats.slice(1)) extra.dispose(true); // só o chapéu sai; a pilha fica
+  if (hats.length > 1) setStatus("Só pode haver um 'ao iniciar'. Os blocos da outra pilha ficaram soltos.", "error");
 }
+
+// colar/duplicar um "ao iniciar" quando já existe um: o novo é removido
+workspace.addChangeListener((e) => {
+  if (e.type !== Blockly.Events.BLOCK_CREATE) return;
+  const ev = e as Blockly.Events.BlockCreate;
+  if (ev.json?.type !== "event_start") return;
+  if (workspace.getTopBlocks(false).filter((b) => b.type === "event_start").length <= 1) return;
+  const novo = workspace.getBlockById(ev.blockId!);
+  if (!novo) return;
+  novo.dispose(true); // só o chapéu sai; os blocos colados ficam soltos
+  setStatus("Só pode haver um 'ao iniciar'. Os blocos colados ficaram soltos.", "error");
+});
 
 workspace.addChangeListener((e) => {
   if (e.isUiEvent) return;
@@ -570,7 +593,11 @@ async function connect() {
     await stopAndReset(); // placa "limpa": programa parado, LED apagado, portas soltas
     setStatus("Conectado — MicroPython pronto", "ok");
   } else {
-    setStatus("Conectado, mas a placa não tem MicroPython — clique em \"Gravar MicroPython\" (só na primeira vez).", "error");
+    setStatus(
+      "A placa não respondeu. Acabou de gravar o MicroPython? Clique em Desconectar, aperte RESET na placa, espere 5 s e conecte de novo. " +
+        "Se nunca gravou, clique em \"Gravar MicroPython\" (só na primeira vez).",
+      "error",
+    );
   }
 }
 

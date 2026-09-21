@@ -475,7 +475,7 @@ export function defineBlocks(): void {
 
   pythonGenerator.forBlock["forever"] = (block, gen) => {
     const branch = gen.statementToCode(block, "DO") || gen.PASS;
-    return `while True:\n${branch}`;
+    return `while _bb_rodando:\n${branch}`;
   };
 }
 
@@ -606,6 +606,9 @@ export function preamble(pin: number): string {
     "",
     "led_rgb(0, 0, 0)  # comeca sempre com o LED apagado",
     "",
+    "# vira False quando o app manda parar (botao Parar ou novo envio): encerra os lacos",
+    "_bb_rodando = True",
+    "",
     "_pwms = {}",
     "",
     "def porta_ligar(n, on):",
@@ -624,10 +627,23 @@ export function preamble(pin: number): string {
     "def porta_ler(n):",
     "    return Pin(n, Pin.IN, Pin.PULL_DOWN).value() == 1",
     "",
+    "_adc_hist = {}  # ultimas leituras de cada porta, para a media movel",
+    "",
     "def porta_analogica(n):",
     "    if n not in _adcs:",
     "        _adcs[n] = ADC(Pin(n), atten=ADC.ATTN_11DB)",
-    "    return _adcs[n].read_u16() * 100 // 65535",
+    "        _adc_hist[n] = []",
+    "    h = _adc_hist[n]",
+    "    h.append(_adcs[n].read_u16())",
+    "    if len(h) > 30:",
+    "        del h[0]",
+    "    p = sum(h) / len(h) * 100 / 65535  # media movel das ultimas 30 leituras",
+    "    # ate 5% vale 0 e de 95% em diante vale 100; o meio (5..95) vira 0..100",
+    "    if p <= 5:",
+    "        return 0",
+    "    if p >= 95:",
+    "        return 100",
+    "    return round((p - 5) * 100 / 90)",
     "",
     "",
   ].join("\n");
@@ -688,7 +704,7 @@ export function programCode(workspace: Blockly.Workspace): string {
     code += `_wifi_nomes.append(${JSON.stringify(name)})\n_wifi_funcs.append(_wifi_${i})\n\n`;
   });
 
-  // "ao iniciar"
+  // "ao iniciar" (existe só um no espaço de trabalho)
   for (const block of tops) {
     if (block.type !== "event_start") continue;
     let c = pythonGenerator.blockToCode(block);
@@ -1007,7 +1023,7 @@ function gamesCommonCode(): string {
     "    _visor_mostrar()",
     "    time.sleep_ms(500)",
     "    _jogo_tecla = False",
-    "    while not _jogo_tecla:",
+    "    while not _jogo_tecla and _bb_rodando:",
     "        time.sleep_ms(50)",
     "",
     "# sprite a partir de linhas de texto ('#' = pixel aceso) -> (framebuffer, largura, altura)",
@@ -1055,7 +1071,7 @@ function snakeCode(): string {
     "    OX = 1 + (oled.width - 2 - W * C) // 2",
     "    OY = 1 + (oled.height - 2 - H * C) // 2",
     "    _jogo_esperar('COBRINHA', '', 'aperte uma seta')",
-    "    while True:",
+    "    while _bb_rodando:",
     "        cobra = [(W // 2 - i, H // 2) for i in range(3)]  # cabeca primeiro",
     "        _cob_dir = _cob_prox = (1, 0)",
     "        pontos = 0",
@@ -1063,7 +1079,7 @@ function snakeCode(): string {
     "        passo = passo0",
     "        maca = _cob_maca(cobra, W, H)",
     "        led_ate = None",
-    "        while True:",
+    "        while _bb_rodando:",
     "            d = _cob_prox",
     "            if d[0] + _cob_dir[0] != 0 or d[1] + _cob_dir[1] != 0:  # nao deixa dar meia-volta",
     "                _cob_dir = d",
@@ -1165,7 +1181,7 @@ function dinoCode(): string {
     "    passaro = _jogo_sprite(_PASSARO)",
     "    pulo = -4.8 if oled.height >= 64 else -3.8  # velocidade inicial do pulo",
     "    _jogo_esperar('DINO', '', 'aperte uma tecla')",
-    "    while True:",
+    "    while _bb_rodando:",
     "        x = 8",
     "        y = float(CHAO - dh)",
     "        vy = 0.0",
@@ -1182,7 +1198,7 @@ function dinoCode(): string {
     "        _dino_pulo = False",
     "        _dino_agachar = 0",
     "        vivo = True",
-    "        while vivo:",
+    "        while vivo and _bb_rodando:",
     "            quadro += 1",
     "            if _dino_pulo:",
     "                _dino_pulo = False",
@@ -1293,7 +1309,7 @@ function flappyCode(): string {
     "    ENTRE = 64  # distancia entre canos",
     "    X = 20      # posicao do passarinho",
     "    _jogo_esperar('FLAPPY', '', 'aperte uma tecla')",
-    "    while True:",
+    "    while _bb_rodando:",
     "        y = float(H // 2 - ah // 2)",
     "        vy = 0.0",
     "        vel0 = 0.45 * _jogo_velocidade  # pixels por quadro (5 -> 2.25)",
@@ -1305,7 +1321,7 @@ function flappyCode(): string {
     "        led_ate = None",
     "        _flap_bater = False",
     "        vivo = True",
-    "        while vivo:",
+    "        while vivo and _bb_rodando:",
     "            quadro += 1",
     "            if _flap_bater:",
     "                _flap_bater = False",
@@ -1525,7 +1541,7 @@ export const toolbox = {
       name: "Eventos",
       colour: EVENT_COLOUR,
       contents: [
-        { kind: "block", type: "event_start" },
+        // "ao iniciar" não fica na biblioteca: existe sempre um, e só um, no espaço de trabalho
         { kind: "block", type: "event_key" },
         { kind: "block", type: "event_wifi" },
       ],

@@ -119,6 +119,7 @@ export class Board {
     await sleep(100);
     await this.write("import machine\r\n");
     await this.write("for _i in range(4): machine.Timer(_i).deinit()\r\n\r\n");
+    await this.write("_bb_rodando = False\r\n"); // pilhas "ao iniciar" em threads saem dos lacos
     await sleep(250);
   }
 
