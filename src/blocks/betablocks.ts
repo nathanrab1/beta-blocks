@@ -300,6 +300,17 @@ export function defineBlocks(): void {
       tooltip: "Escreve um texto (ou número) a partir de uma linha do visor. Textos longos quebram em várias linhas, sem cortar palavras.",
     },
     {
+      type: "oled_plot",
+      message0: "plotar no visor %1",
+      args0: [{ type: "input_value", name: "VALUE", check: "Number" }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: OLED_COLOUR,
+      tooltip:
+        "Desenha um gráfico do valor (0 a 100%) ao longo do tempo. Cada vez que o bloco roda, adiciona um ponto; " +
+        "use dentro de 'repetir para sempre' com um 'esperar'.",
+    },
+    {
       type: "oled_clear",
       message0: "limpar visor",
       previousStatement: null,
@@ -449,6 +460,10 @@ export function defineBlocks(): void {
     return `visor_texto(${text}, ${block.getFieldValue("LINE")})\n`;
   };
 
+  pythonGenerator.forBlock["oled_plot"] = (block, gen) => {
+    const v = gen.valueToCode(block, "VALUE", Order.NONE) || "0";
+    return `visor_grafico(${v})\n`;
+  };
   pythonGenerator.forBlock["oled_clear"] = () => "visor_limpar()\n";
   pythonGenerator.forBlock["oled_snake"] = () => "visor_cobrinha()\n";
   pythonGenerator.forBlock["oled_dino"] = () => "visor_dino()\n";
@@ -695,11 +710,24 @@ export const WIFI_MARK = "\x1c";
 const WIFI_PAGE =
   "<!doctype html><html lang=pt-BR><head><meta charset=utf-8>" +
   '<meta name=viewport content="width=device-width,initial-scale=1"><title>Beta Blocks</title>' +
-  "<style>body{font-family:sans-serif;background:#f4f5f7;margin:0;padding:16px}" +
-  "h1{font-size:18px;color:#555}button{display:block;width:100%;font-size:22px;padding:18px;margin:10px 0;" +
-  "border:0;border-radius:12px;background:#2f80ed;color:#fff}button:active{background:#1f6dd6}</style></head>" +
-  "<body><h1>Beta Blocks</h1>{BOTOES}<script>document.querySelectorAll('button').forEach((b,i)=>" +
-  "b.onclick=()=>fetch('/b?i='+i))</script></body></html>";
+  "<style>body{font-family:sans-serif;background:#f4f5f7;margin:0;padding:16px;user-select:none;-webkit-user-select:none;touch-action:manipulation}" +
+  "h1{font-size:18px;color:#555}button{display:block;box-sizing:border-box;width:100%;font-size:22px;padding:18px;margin:10px 0;" +
+  "border:0;border-radius:12px;background:#2f80ed;color:#fff}button:active{background:#1f6dd6}" +
+  // teclado: direcional em grade 3x3 + botões das outras teclas
+  ".pad{display:grid;grid-template-columns:repeat(3,76px);gap:8px;justify-content:center;margin:18px 0}" +
+  ".pad button{margin:0;height:76px;padding:0;font-size:32px;background:#444}.pad button:active{background:#222}" +
+  ".keys button{background:#27ae60}.keys button:active{background:#1e8449}</style></head>" +
+  "<body><h1>Beta Blocks</h1>{BOTOES}<div id=teclado></div><script>" +
+  "document.querySelectorAll('.ev').forEach((b,i)=>b.onclick=()=>fetch('/b?i='+i));" +
+  "var T={TECLAS},S={up:'\u25b2',down:'\u25bc',left:'\u25c0',right:'\u25b6',space:'espa\u00e7o'},P=[,'up',,'left','down','right'];" +
+  "function bt(n,c){var b=document.createElement('button');b.textContent=S[n]||n;b.className=c||'';" +
+  "b.onpointerdown=function(e){e.preventDefault();fetch('/k?n='+encodeURIComponent(n))};return b}" +
+  "var d=document.getElementById('teclado'),A=['up','down','left','right'];" +
+  "if(T.some(function(n){return A.indexOf(n)>=0})){var g=document.createElement('div');g.className='pad';" +
+  "for(var i=0;i<6;i++){var n=P[i];if(n&&T.indexOf(n)>=0)g.appendChild(bt(n));else g.appendChild(document.createElement('span'))}d.appendChild(g)}" +
+  "var o=T.filter(function(n){return A.indexOf(n)<0});if(o.length){var k=document.createElement('div');k.className='keys';" +
+  "o.forEach(function(n){k.appendChild(bt(n))});d.appendChild(k)}" +
+  "</script></body></html>";
 
 /** Conexão Wi-Fi + servidor web mínimo, atendido por um timer (não bloqueia o programa). */
 function wifiRuntimeCode(): string {
@@ -754,9 +782,18 @@ function wifiRuntimeCode(): string {
     "            cl.write(b'HTTP/1.0 204 No Content\\r\\nAccess-Control-Allow-Origin: *\\r\\nConnection: close\\r\\n\\r\\n')",
     "            cl.close()",
     "            _wifi_disparar(nome)",
+    "        elif linha.startswith(b'GET /k?n='):",
+    "            nome = _urldecode(linha[9:].split(b' ')[0])",
+    "            cl.write(b'HTTP/1.0 204 No Content\\r\\nConnection: close\\r\\n\\r\\n')",
+    "            cl.close()",
+    "            f = globals().get('_teclas', {}).get(nome)",
+    "            if f:",
+    "                f()",
     "        elif linha.startswith(b'GET / '):",
-    "            botoes = ''.join('<button>%s</button>' % n for n in _wifi_nomes)",
-    "            corpo = _WIFI_PAGE.replace('{BOTOES}', botoes).encode()",
+    "            botoes = ''.join('<button class=ev>%s</button>' % n for n in _wifi_nomes)",
+    "            # teclado na pagina: as teclas que o programa (ou o jogo) esta esperando",
+    "            teclas = list(globals().get('_teclas', {}).keys())",
+    "            corpo = _WIFI_PAGE.replace('{BOTOES}', botoes).replace('{TECLAS}', _json.dumps(teclas)).encode()",
     "            cl.write(b'HTTP/1.0 200 OK\\r\\nContent-Type: text/html; charset=utf-8\\r\\nContent-Length: %d\\r\\nConnection: close\\r\\n\\r\\n' % len(corpo))",
     "            cl.write(corpo)",
     "        else:",
@@ -915,7 +952,7 @@ export function monitorCode(pins: InputPins): string {
   ].join("\n");
 }
 
-const OLED_BLOCK_TYPES = ["oled_config", "oled_text", "oled_clear", "oled_draw", "oled_snake", "oled_dino", "oled_flappy"];
+const OLED_BLOCK_TYPES = ["oled_config", "oled_text", "oled_plot", "oled_clear", "oled_draw", "oled_snake", "oled_dino", "oled_flappy"];
 
 /** Jogos do visor e as teclas que cada um usa. */
 const GAMES: Record<string, string[]> = {
@@ -1008,13 +1045,15 @@ function snakeCode(): string {
     "",
     "def visor_cobrinha():",
     "    global _cob_dir, _cob_prox",
-    "    if oled is None:",
-    "        visor_iniciar(8, 9, 128, 64)",
+    "    _visor_garantir()",
     "    for n in _COB_DIRS:",
     "        _teclas[n] = (lambda k: lambda: _cob_seta(k))(n)",
     "    C = 4  # tamanho de cada casa, em pixels",
-    "    W = oled.width // C",
-    "    H = oled.height // C",
+    "    # moldura de 1 px na borda (a parede) e a arena centralizada dentro dela",
+    "    W = (oled.width - 2) // C",
+    "    H = (oled.height - 2) // C",
+    "    OX = 1 + (oled.width - 2 - W * C) // 2",
+    "    OY = 1 + (oled.height - 2 - H * C) // 2",
     "    _jogo_esperar('COBRINHA', '', 'aperte uma seta')",
     "    while True:",
     "        cobra = [(W // 2 - i, H // 2) for i in range(3)]  # cabeca primeiro",
@@ -1042,9 +1081,10 @@ function snakeCode(): string {
     "            else:",
     "                cobra.pop()",
     "            oled.fill(0)",
+    "            oled.rect(0, 0, oled.width, oled.height, 1)",
     "            for sx, sy in cobra:",
-    "                oled.fill_rect(sx * C, sy * C, C, C, 1)",
-    "            oled.rect(maca[0] * C, maca[1] * C, C, C, 1)",
+    "                oled.fill_rect(OX + sx * C, OY + sy * C, C, C, 1)",
+    "            oled.rect(OX + maca[0] * C, OY + maca[1] * C, C, C, 1)",
     "            _visor_mostrar()",
     "            time.sleep_ms(passo)",
     "            if led_ate is not None and time.ticks_diff(time.ticks_ms(), led_ate) >= 0:",
@@ -1113,8 +1153,7 @@ function dinoCode(): string {
     "",
     "def visor_dino():",
     "    global _dino_pulo, _dino_agachar",
-    "    if oled is None:",
-    "        visor_iniciar(8, 9, 128, 64)",
+    "    _visor_garantir()",
     "    for n in ('up', 'space', 'down'):",
     "        _teclas[n] = (lambda k: lambda: _dino_tecla(k))(n)",
     "    W = oled.width",
@@ -1243,8 +1282,7 @@ function flappyCode(): string {
     "",
     "def visor_flappy():",
     "    global _flap_bater",
-    "    if oled is None:",
-    "        visor_iniciar(8, 9, 128, 64)",
+    "    _visor_garantir()",
     "    for n in ('up', 'space'):",
     "        _teclas[n] = (lambda k: lambda: _flap_tecla(k))(n)",
     "    W, H = oled.width, oled.height",
@@ -1382,9 +1420,13 @@ export function oledCode(): string {
     "        oled = _VisorVirtual(w, h)  # sem OLED fisico: so o preview no app",
     "    _visor_mostrar()",
     "",
-    "def visor_texto(txt, linha):",
+    "def _visor_garantir():",
+    "    # sem o bloco 'iniciar visor': liga com os pinos padrao (SDA 8, SCL 9)",
     "    if oled is None:",
-    "        return",
+    "        visor_iniciar(8, 9, 128, 64)",
+    "",
+    "def visor_texto(txt, linha):",
+    "    _visor_garantir()",
     "    cols = oled.width // 8",
     "    max_linhas = oled.height // 8",
     "    # quebra em linhas sem cortar palavras (palavra maior que a linha e cortada)",
@@ -1415,14 +1457,57 @@ export function oledCode(): string {
     "    _visor_mostrar()",
     "",
     "def visor_limpar():",
-    "    if oled is None:",
-    "        return",
+    "    _visor_garantir()",
     "    oled.fill(0)",
     "    _visor_mostrar()",
     "",
+    "# grafico: um ponto por chamada, eixo Y em % e eixo X no tempo",
+    "_graf = []",
+    "_graf_t0 = None",
+    "",
+    "def visor_grafico(v):",
+    "    global _graf_t0",
+    "    _visor_garantir()",
+    "    if _graf_t0 is None:",
+    "        _graf_t0 = time.ticks_ms()",
+    "    try:",
+    "        v = max(0, min(100, float(v)))",
+    "    except (TypeError, ValueError):",
+    "        v = 0",
+    "    alto = oled.height >= 64",
+    "    X0 = 34                    # inicio da area do grafico (esquerda ficam os rotulos)",
+    "    Y0 = 2 if alto else 1      # topo (100%)",
+    "    Y1 = 54 if alto else 24    # linha do eixo do tempo (0%)",
+    "    W = oled.width - X0",
+    "    _graf.append(v)",
+    "    if len(_graf) > W:",
+    "        del _graf[0]",
+    "    oled.fill(0)",
+    "    oled.vline(X0 - 1, Y0, Y1 - Y0 + 1, 1)  # eixo %",
+    "    oled.hline(X0 - 1, Y1, W + 1, 1)        # eixo tempo",
+    "    oled.text('100%', 0, Y0 - 2 if alto else 0, 1)",
+    "    oled.text('0%', 16, Y1 - 7, 1)",
+    "    if alto:",
+    "        oled.text('50%', 8, (Y0 + Y1) // 2 - 4, 1)",
+    "        oled.hline(X0 - 3, (Y0 + Y1) // 2, 2, 1)",
+    "        oled.text('tempo', X0, 56, 1)",
+    "        seg = '%ds' % (time.ticks_diff(time.ticks_ms(), _graf_t0) // 1000)",
+    "        oled.text(seg, oled.width - len(seg) * 8, 56, 1)",
+    "    for i in range(10, W, 10):  # marquinhas de tempo",
+    "        oled.pixel(X0 + i, Y1 - 1, 1)",
+    "    py = None",
+    "    for i, val in enumerate(_graf):",
+    "        x = X0 + i",
+    "        y = Y1 - int(val * (Y1 - Y0) / 100)",
+    "        if py is None:",
+    "            oled.pixel(x, y, 1)",
+    "        else:",
+    "            oled.line(x - 1, py, x, y, 1)",
+    "        py = y",
+    "    _visor_mostrar()",
+    "",
     "def visor_desenho(dados):",
-    "    if oled is None:",
-    "        return",
+    "    _visor_garantir()",
     "    b = binascii.a2b_base64(dados)",
     "    n = min(len(b), len(oled.buffer))",
     "    oled.buffer[:n] = b[:n]",
@@ -1510,6 +1595,11 @@ export const toolbox = {
           kind: "block",
           type: "oled_text",
           inputs: { TEXT: { shadow: { type: "text", fields: { TEXT: "Ola!" } } } },
+        },
+        {
+          kind: "block",
+          type: "oled_plot",
+          inputs: { VALUE: { shadow: { type: "math_number", fields: { NUM: 50 } } } },
         },
         { kind: "block", type: "oled_clear" },
         { kind: "block", type: "oled_draw" },
