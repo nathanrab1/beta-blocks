@@ -17,6 +17,7 @@ import {
   WIFI_MARK,
   wifiEventNames,
   keysOfType,
+  gameKeys,
   usesOled,
   oledCode,
   type InputPins,
@@ -665,8 +666,11 @@ document.addEventListener("keydown", (e) => {
   const name = KEY_NAMES[e.key] ?? e.key.toLowerCase();
   if (!KNOWN_KEYS.has(name)) return;
 
-  const viaUsb = keysOfType(workspace, "event_key").has(name) && board.connected && monitorMode === "program" && !busy;
-  const viaWifi = keysOfType(workspace, "event_key_wifi").has(name);
+  // teclas dos jogos: pelo cabo se a placa estiver conectada rodando o programa, senão pelo Wi-Fi
+  const jogo = gameKeys(workspace).has(name);
+  const usbOk = board.connected && monitorMode === "program" && !busy;
+  const viaUsb = (keysOfType(workspace, "event_key").has(name) || jogo) && usbOk;
+  const viaWifi = keysOfType(workspace, "event_key_wifi").has(name) || (jogo && !usbOk);
   if (!viaUsb && !viaWifi) return;
   e.preventDefault();
   const rotulo = e.key === " " ? "espaço" : e.key;

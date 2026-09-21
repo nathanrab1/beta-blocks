@@ -10,6 +10,7 @@ const PORT_COLOUR = 200;
 const INPUT_COLOUR = 160;
 const OLED_COLOUR = 260;
 const WIFI_COLOUR = 290;
+const GAME_COLOUR = 330;
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
 const NAMED_COLORS: Record<string, [number, number, number]> = {
@@ -307,6 +308,42 @@ export function defineBlocks(): void {
       tooltip: "Apaga tudo que está no visor.",
     },
     {
+      type: "oled_snake",
+      message0: "🐍 jogo da cobrinha",
+      previousStatement: null,
+      colour: GAME_COLOUR,
+      tooltip:
+        "Inicia o jogo da cobrinha no visor. Controle com as setas do teclado (pelo cabo ou pelo Wi-Fi). " +
+        "Coloque depois de 'iniciar visor' e 'conectar no Wi-Fi'. O jogo roda para sempre.",
+    },
+    {
+      type: "game_speed",
+      message0: "velocidade do jogo %1",
+      args0: [{ type: "field_number", name: "SPEED", value: 5, min: 1, max: 10, precision: 1 }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: GAME_COLOUR,
+      tooltip: "Velocidade inicial dos jogos, de 1 (bem lenta) a 10 (bem rápida). 5 é a normal. Coloque antes do bloco do jogo.",
+    },
+    {
+      type: "oled_flappy",
+      message0: "🐤 jogo do passarinho (flappy)",
+      previousStatement: null,
+      colour: GAME_COLOUR,
+      tooltip:
+        "Flappy Bird no visor: ↑ ou espaço bate as asas para passar entre os canos. " +
+        "Teclas pelo cabo ou pelo Wi-Fi. Coloque depois de 'iniciar visor' e 'conectar no Wi-Fi'. O jogo roda para sempre.",
+    },
+    {
+      type: "oled_dino",
+      message0: "🦖 jogo do dinossauro",
+      previousStatement: null,
+      colour: GAME_COLOUR,
+      tooltip:
+        "O jogo do dinossauro do Chrome no visor: ↑ ou espaço pula os cactos, ↓ agacha dos pássaros. " +
+        "Teclas pelo cabo ou pelo Wi-Fi. Coloque depois de 'iniciar visor' e 'conectar no Wi-Fi'. O jogo roda para sempre.",
+    },
+    {
       type: "forever",
       message0: "repetir para sempre %1 %2",
       args0: [
@@ -413,6 +450,13 @@ export function defineBlocks(): void {
   };
 
   pythonGenerator.forBlock["oled_clear"] = () => "visor_limpar()\n";
+  pythonGenerator.forBlock["oled_snake"] = () => "visor_cobrinha()\n";
+  pythonGenerator.forBlock["oled_dino"] = () => "visor_dino()\n";
+  pythonGenerator.forBlock["oled_flappy"] = () => "visor_flappy()\n";
+  pythonGenerator.forBlock["game_speed"] = (block) => {
+    const v = Math.min(10, Math.max(1, Number(block.getFieldValue("SPEED")) || 5));
+    return `_jogo_velocidade = ${v}\n`;
+  };
 
   pythonGenerator.forBlock["forever"] = (block, gen) => {
     const branch = gen.statementToCode(block, "DO") || gen.PASS;
@@ -603,7 +647,9 @@ export function programCode(workspace: Blockly.Workspace): string {
   // "quando apertar a tecla": cada pilha vira uma função registrada em _teclas
   const keyHats = tops.filter((b) => b.type === "event_key" || b.type === "event_key_wifi");
   const hasWifiHats = tops.some((b) => b.type === "event_wifi");
-  if (keyHats.length > 0 || hasWifiHats) code += keysRuntimeCode();
+  const jogos = gameKeys(workspace).size > 0;
+  if (keyHats.length > 0 || hasWifiHats || jogos) code += keysRuntimeCode();
+  if (jogos) code += gamesCode(workspace);
   keyHats.forEach((hat, i) => {
     const next = hat.getNextBlock();
     let body = next ? pythonGenerator.blockToCode(next) : "";
@@ -867,7 +913,409 @@ export function monitorCode(pins: InputPins): string {
   ].join("\n");
 }
 
-const OLED_BLOCK_TYPES = ["oled_config", "oled_text", "oled_clear", "oled_draw"];
+const OLED_BLOCK_TYPES = ["oled_config", "oled_text", "oled_clear", "oled_draw", "oled_snake", "oled_dino", "oled_flappy"];
+
+/** Jogos do visor e as teclas que cada um usa. */
+const GAMES: Record<string, string[]> = {
+  oled_snake: ["up", "down", "left", "right"],
+  oled_dino: ["up", "down", "space"],
+  oled_flappy: ["up", "space"],
+  game_speed: [],
+};
+
+/** Teclas dos jogos presentes no programa (o app envia essas ao apertar). */
+export function gameKeys(workspace: Blockly.Workspace): Set<string> {
+  const keys = new Set<string>();
+  for (const b of programBlocks(workspace)) for (const k of GAMES[b.type] ?? []) keys.add(k);
+  return keys;
+}
+
+function usesGame(workspace: Blockly.Workspace, type: string): boolean {
+  return programBlocks(workspace).some((b) => b.type === type);
+}
+
+/**
+ * Código dos jogos usados no programa. As teclas chegam pelo leitor de teclas
+ * (_teclas), tanto pelo cabo quanto pelo receptor Wi-Fi do boot.py.
+ */
+function gamesCode(workspace: Blockly.Workspace): string {
+  let code = gamesCommonCode();
+  if (usesGame(workspace, "oled_snake")) code += snakeCode();
+  if (usesGame(workspace, "oled_dino")) code += dinoCode();
+  if (usesGame(workspace, "oled_flappy")) code += flappyCode();
+  return code;
+}
+
+function gamesCommonCode(): string {
+  return [
+    "# --- jogos ---",
+    "import random",
+    "_jogo_tecla = False  # alguma tecla do jogo foi apertada?",
+    "_jogo_velocidade = 5  # 1..10, mudado pelo bloco 'velocidade do jogo'",
+    "",
+    "def _jogo_centro(txt, y):",
+    "    oled.text(txt, max(0, (oled.width - len(txt) * 8) // 2), y, 1)",
+    "",
+    "# tela de titulo / fim de jogo: espera uma tecla do jogo",
+    "def _jogo_esperar(titulo, sub, dica):",
+    "    global _jogo_tecla",
+    "    oled.fill(0)",
+    "    alto = oled.height >= 64",
+    "    _jogo_centro(titulo, 8 if alto else 0)",
+    "    if sub:",
+    "        _jogo_centro(sub, 26 if alto else 12)",
+    "    _jogo_centro(dica, oled.height - (12 if alto else 8))",
+    "    _visor_mostrar()",
+    "    time.sleep_ms(500)",
+    "    _jogo_tecla = False",
+    "    while not _jogo_tecla:",
+    "        time.sleep_ms(50)",
+    "",
+    "# sprite a partir de linhas de texto ('#' = pixel aceso) -> (framebuffer, largura, altura)",
+    "def _jogo_sprite(linhas):",
+    "    w, h = len(linhas[0]), len(linhas)",
+    "    bw = (w + 7) // 8",
+    "    b = bytearray(bw * h)",
+    "    for y, l in enumerate(linhas):",
+    "        for x, c in enumerate(l):",
+    "            if c == '#':",
+    "                b[y * bw + x // 8] |= 0x80 >> (x % 8)",
+    "    return framebuf.FrameBuffer(b, w, h, framebuf.MONO_HLSB), w, h",
+    "",
+    "",
+  ].join("\n");
+}
+
+function snakeCode(): string {
+  return [
+    "# --- jogo da cobrinha ---",
+    "_COB_DIRS = {'up': (0, -1), 'down': (0, 1), 'left': (-1, 0), 'right': (1, 0)}",
+    "_cob_dir = (1, 0)   # direcao atual",
+    "_cob_prox = (1, 0)  # ultima seta apertada",
+    "",
+    "def _cob_seta(nome):",
+    "    global _cob_prox, _jogo_tecla",
+    "    _cob_prox = _COB_DIRS[nome]",
+    "    _jogo_tecla = True",
+    "",
+    "def _cob_maca(cobra, w, h):",
+    "    while True:",
+    "        m = (random.randint(0, w - 1), random.randint(0, h - 1))",
+    "        if m not in cobra:",
+    "            return m",
+    "",
+    "def visor_cobrinha():",
+    "    global _cob_dir, _cob_prox",
+    "    if oled is None:",
+    "        visor_iniciar(8, 9, 128, 64)",
+    "    for n in _COB_DIRS:",
+    "        _teclas[n] = (lambda k: lambda: _cob_seta(k))(n)",
+    "    C = 4  # tamanho de cada casa, em pixels",
+    "    W = oled.width // C",
+    "    H = oled.height // C",
+    "    _jogo_esperar('COBRINHA', '', 'aperte uma seta')",
+    "    while True:",
+    "        cobra = [(W // 2 - i, H // 2) for i in range(3)]  # cabeca primeiro",
+    "        _cob_dir = _cob_prox = (1, 0)",
+    "        pontos = 0",
+    "        passo0 = 1000 // _jogo_velocidade  # ms entre passos (5 -> 200 ms)",
+    "        passo = passo0",
+    "        maca = _cob_maca(cobra, W, H)",
+    "        led_ate = None",
+    "        while True:",
+    "            d = _cob_prox",
+    "            if d[0] + _cob_dir[0] != 0 or d[1] + _cob_dir[1] != 0:  # nao deixa dar meia-volta",
+    "                _cob_dir = d",
+    "            x = cobra[0][0] + _cob_dir[0]",
+    "            y = cobra[0][1] + _cob_dir[1]",
+    "            if x < 0 or y < 0 or x >= W or y >= H or (x, y) in cobra[:-1]:",
+    "                break  # bateu na parede ou no proprio corpo",
+    "            cobra.insert(0, (x, y))",
+    "            if (x, y) == maca:",
+    "                pontos += 1",
+    "                passo = max(passo0 * 2 // 5, passo - passo0 // 25)  # acelera a cada maca",
+    "                maca = _cob_maca(cobra, W, H)",
+    "                led_rgb(0, 40, 0)",
+    "                led_ate = time.ticks_add(time.ticks_ms(), 150)",
+    "            else:",
+    "                cobra.pop()",
+    "            oled.fill(0)",
+    "            for sx, sy in cobra:",
+    "                oled.fill_rect(sx * C, sy * C, C, C, 1)",
+    "            oled.rect(maca[0] * C, maca[1] * C, C, C, 1)",
+    "            _visor_mostrar()",
+    "            time.sleep_ms(passo)",
+    "            if led_ate is not None and time.ticks_diff(time.ticks_ms(), led_ate) >= 0:",
+    "                led_rgb(0, 0, 0)",
+    "                led_ate = None",
+    "        led_rgb(40, 0, 0)",
+    "        _jogo_esperar('FIM DE JOGO', '%d pontos' % pontos, 'aperte uma seta')",
+    "        led_rgb(0, 0, 0)",
+    "",
+    "",
+  ].join("\n");
+}
+
+/** Jogo do dinossauro (o do Chrome sem internet): pular cactos e agachar dos pássaros. */
+function dinoCode(): string {
+  return [
+    "# --- jogo do dinossauro ---",
+    "_DINO_A = [",
+    "    '.......#####',",
+    "    '.......#.###',",
+    "    '.......#####',",
+    "    '.......###..',",
+    "    '.......#####',",
+    "    '#.....###...',",
+    "    '#....#####..',",
+    "    '##..######..',",
+    "    '.########...',",
+    "    '..######....',",
+    "    '...##.##....',",
+    "    '...#...#....',",
+    "]",
+    "_DINO_B = _DINO_A[:10] + ['...##.##....', '...##..##...']  # outra posicao das pernas",
+    "_DINO_AGACHADO = [",
+    "    '..........######',",
+    "    '..........#.####',",
+    "    '#.........######',",
+    "    '##.......####...',",
+    "    '.###########....',",
+    "    '..#########.....',",
+    "    '...##...##......',",
+    "]",
+    "_CACTO = ['..##..', '..##..', '#.##.#', '#.##.#', '######', '..##..', '..##..', '..##..']",
+    "_OBSTACULOS = [",
+    "    _CACTO,                              # cacto baixo",
+    "    ['..##..'] * 4 + _CACTO,             # cacto alto",
+    "    [a + '..' + b for a, b in zip(_CACTO, _CACTO)],  # dois cactos",
+    "]",
+    "_PASSARO = [",
+    "    '..##........',",
+    "    '...##.......',",
+    "    '#...########',",
+    "    '.####....##.',",
+    "    '..######....',",
+    "    '...##.......',",
+    "]",
+    "_dino_pulo = False",
+    "_dino_agachar = 0  # quadros que ainda fica agachado",
+    "",
+    "def _dino_tecla(nome):",
+    "    global _dino_pulo, _dino_agachar, _jogo_tecla",
+    "    _jogo_tecla = True",
+    "    if nome == 'down':",
+    "        _dino_agachar = 10",
+    "    else:",
+    "        _dino_pulo = True",
+    "",
+    "def visor_dino():",
+    "    global _dino_pulo, _dino_agachar",
+    "    if oled is None:",
+    "        visor_iniciar(8, 9, 128, 64)",
+    "    for n in ('up', 'space', 'down'):",
+    "        _teclas[n] = (lambda k: lambda: _dino_tecla(k))(n)",
+    "    W = oled.width",
+    "    CHAO = oled.height - 6  # y da linha do chao",
+    "    dino_a, dw, dh = _jogo_sprite(_DINO_A)",
+    "    dino_b = _jogo_sprite(_DINO_B)[0]",
+    "    agachado, aw, ah = _jogo_sprite(_DINO_AGACHADO)",
+    "    obstaculos = [_jogo_sprite(o) for o in _OBSTACULOS]",
+    "    passaro = _jogo_sprite(_PASSARO)",
+    "    pulo = -4.8 if oled.height >= 64 else -3.8  # velocidade inicial do pulo",
+    "    _jogo_esperar('DINO', '', 'aperte uma tecla')",
+    "    while True:",
+    "        x = 8",
+    "        y = float(CHAO - dh)",
+    "        vy = 0.0",
+    "        no_chao = True",
+    "        vel0 = 0.6 * _jogo_velocidade  # pixels por quadro (5 -> 3.0)",
+    "        vel = vel0",
+    "        dist = 0.0",
+    "        pontos = 0",
+    "        marco = 0  # ultima centena comemorada",
+    "        obs = []  # [x, tipo]; tipo -1 = passaro",
+    "        prox = 60.0  # distancia ate o proximo obstaculo",
+    "        quadro = 0",
+    "        led_ate = None",
+    "        _dino_pulo = False",
+    "        _dino_agachar = 0",
+    "        vivo = True",
+    "        while vivo:",
+    "            quadro += 1",
+    "            if _dino_pulo:",
+    "                _dino_pulo = False",
+    "                if no_chao:",
+    "                    vy = pulo",
+    "                    no_chao = False",
+    "            if not no_chao:",
+    "                vy += 0.9 if _dino_agachar > 0 else 0.55  # agachar no ar desce mais rapido",
+    "                y += vy",
+    "                if y >= CHAO - dh:",
+    "                    y = float(CHAO - dh)",
+    "                    vy = 0.0",
+    "                    no_chao = True",
+    "            if _dino_agachar > 0:",
+    "                _dino_agachar -= 1",
+    "            dist += vel",
+    "            prox -= vel",
+    "            if prox <= 0:",
+    "                if pontos >= 30 and random.randint(0, 2) == 0:",
+    "                    tipo = -1",
+    "                else:",
+    "                    tipo = random.randint(0, len(obstaculos) - 1)",
+    "                obs.append([float(W), tipo])",
+    "                prox = float(random.randint(60, 130))",
+    "            for o in obs:",
+    "                o[0] -= vel",
+    "            obs = [o for o in obs if o[0] > -20]",
+    "            pontos = int(dist // 8)",
+    "            vel = min(vel0 + 4.0, vel0 + (pontos // 100) * 0.3)",
+    "            if pontos // 100 > marco:  # a cada 100 pontos pisca verde",
+    "                marco = pontos // 100",
+    "                led_rgb(0, 40, 0)",
+    "                led_ate = time.ticks_add(time.ticks_ms(), 200)",
+    "            esta_agachado = _dino_agachar > 0 and no_chao",
+    "            if esta_agachado:",
+    "                dx0, dy0, dx1, dy1 = x, CHAO - ah, x + aw, CHAO",
+    "            else:",
+    "                dx0, dy0, dx1, dy1 = x, int(y), x + dw, int(y) + dh",
+    "            oled.fill(0)",
+    "            oled.hline(0, CHAO, W, 1)",
+    "            oled.text(str(pontos), W - len(str(pontos)) * 8, 0, 1)",
+    "            for ox, tipo in obs:",
+    "                if tipo < 0:",
+    "                    fb, w, h = passaro",
+    "                    oy = CHAO - 13  # na altura da cabeca: passa so agachado",
+    "                else:",
+    "                    fb, w, h = obstaculos[tipo]",
+    "                    oy = CHAO - h",
+    "                ox = int(ox)",
+    "                oled.blit(fb, ox, oy, 0)",
+    "                # caixas encolhidas em 1 pixel para nao morrer por encostar",
+    "                if ox + 1 < dx1 - 1 and ox + w - 1 > dx0 + 1 and oy + 1 < dy1 - 1 and oy + h - 1 > dy0 + 1:",
+    "                    vivo = False",
+    "            if esta_agachado:",
+    "                oled.blit(agachado, x, CHAO - ah, 0)",
+    "            else:",
+    "                oled.blit(dino_a if not no_chao or (quadro // 3) % 2 == 0 else dino_b, x, int(y), 0)",
+    "            _visor_mostrar()",
+    "            time.sleep_ms(25)",
+    "            if led_ate is not None and time.ticks_diff(time.ticks_ms(), led_ate) >= 0:",
+    "                led_rgb(0, 0, 0)",
+    "                led_ate = None",
+    "        led_rgb(40, 0, 0)",
+    "        _jogo_esperar('FIM DE JOGO', '%d pontos' % pontos, 'aperte uma tecla')",
+    "        led_rgb(0, 0, 0)",
+    "",
+    "",
+  ].join("\n");
+}
+
+/** Flappy Bird: bater as asas para passar entre os canos. */
+function flappyCode(): string {
+  return [
+    "# --- jogo do passarinho (flappy) ---",
+    "_PASS_A = [",
+    "    '..####..',",
+    "    '.#..#.#.',",
+    "    '#...####',",
+    "    '#.#.###.',",
+    "    '.#####..',",
+    "    '..###...',",
+    "]",
+    "_PASS_B = [",
+    "    '..####..',",
+    "    '.#..#.#.',",
+    "    '#...####',",
+    "    '.####.#.',",
+    "    '..#####.',",
+    "    '...###..',",
+    "]",
+    "_flap_bater = False",
+    "",
+    "def _flap_tecla(nome):",
+    "    global _flap_bater, _jogo_tecla",
+    "    _jogo_tecla = True",
+    "    _flap_bater = True",
+    "",
+    "def visor_flappy():",
+    "    global _flap_bater",
+    "    if oled is None:",
+    "        visor_iniciar(8, 9, 128, 64)",
+    "    for n in ('up', 'space'):",
+    "        _teclas[n] = (lambda k: lambda: _flap_tecla(k))(n)",
+    "    W, H = oled.width, oled.height",
+    "    ave_a, aw, ah = _jogo_sprite(_PASS_A)",
+    "    ave_b = _jogo_sprite(_PASS_B)[0]",
+    "    CANO = 8    # largura do cano",
+    "    VAO = 26 if H >= 64 else 16  # abertura entre os canos",
+    "    ENTRE = 64  # distancia entre canos",
+    "    X = 20      # posicao do passarinho",
+    "    _jogo_esperar('FLAPPY', '', 'aperte uma tecla')",
+    "    while True:",
+    "        y = float(H // 2 - ah // 2)",
+    "        vy = 0.0",
+    "        vel0 = 0.45 * _jogo_velocidade  # pixels por quadro (5 -> 2.25)",
+    "        vel = vel0",
+    "        pontos = 0",
+    "        canos = []  # [x, topo do vao, ja pontuou]",
+    "        prox = float(W)",
+    "        quadro = 0",
+    "        led_ate = None",
+    "        _flap_bater = False",
+    "        vivo = True",
+    "        while vivo:",
+    "            quadro += 1",
+    "            if _flap_bater:",
+    "                _flap_bater = False",
+    "                vy = -3.0",
+    "            vy += 0.45",
+    "            y += vy",
+    "            if y < 0:",
+    "                y = 0.0",
+    "                vy = 0.0",
+    "            if y + ah > H - 1:",
+    "                vivo = False  # caiu no chao",
+    "            prox -= vel",
+    "            if prox <= 0:",
+    "                canos.append([float(W), random.randint(3, H - 3 - VAO), False])",
+    "                prox = float(ENTRE)",
+    "            for c in canos:",
+    "                c[0] -= vel",
+    "            canos = [c for c in canos if c[0] > -CANO - 2]",
+    "            vel = min(vel0 + 2.0, vel0 + (pontos // 10) * 0.2)",
+    "            yi = int(y)",
+    "            oled.fill(0)",
+    "            oled.hline(0, H - 1, W, 1)",
+    "            for c in canos:",
+    "                cx, topo = int(c[0]), c[1]",
+    "                oled.rect(cx, -1, CANO, topo + 1, 1)  # cano de cima",
+    "                oled.rect(cx - 1, topo - 3, CANO + 2, 3, 1)",
+    "                oled.rect(cx, topo + VAO, CANO, H - topo - VAO, 1)  # cano de baixo",
+    "                oled.rect(cx - 1, topo + VAO, CANO + 2, 3, 1)",
+    "                # bateu no cano? (caixa do passarinho encolhida em 1 pixel)",
+    "                if cx - 1 < X + aw - 1 and cx + CANO + 1 > X + 1 and (yi + 1 < topo or yi + ah - 1 > topo + VAO):",
+    "                    vivo = False",
+    "                if not c[2] and cx + CANO < X:  # passou do cano",
+    "                    c[2] = True",
+    "                    pontos += 1",
+    "                    led_rgb(0, 40, 0)",
+    "                    led_ate = time.ticks_add(time.ticks_ms(), 120)",
+    "            oled.blit(ave_a if vy < 0 and (quadro // 2) % 2 == 0 else ave_b, X, yi, 0)",
+    "            oled.text(str(pontos), W - len(str(pontos)) * 8, 0, 1)",
+    "            _visor_mostrar()",
+    "            time.sleep_ms(25)",
+    "            if led_ate is not None and time.ticks_diff(time.ticks_ms(), led_ate) >= 0:",
+    "                led_rgb(0, 0, 0)",
+    "                led_ate = None",
+    "        led_rgb(40, 0, 0)",
+    "        _jogo_esperar('FIM DE JOGO', '%d pontos' % pontos, 'aperte uma tecla')",
+    "        led_rgb(0, 0, 0)",
+    "",
+    "",
+  ].join("\n");
+}
 
 export function usesOled(workspace: Blockly.Workspace): boolean {
   return programBlocks(workspace).some((b) => OLED_BLOCK_TYPES.includes(b.type));
@@ -1063,6 +1511,17 @@ export const toolbox = {
         },
         { kind: "block", type: "oled_clear" },
         { kind: "block", type: "oled_draw" },
+      ],
+    },
+    {
+      kind: "category",
+      name: "Jogos",
+      colour: GAME_COLOUR,
+      contents: [
+        { kind: "block", type: "game_speed" },
+        { kind: "block", type: "oled_snake" },
+        { kind: "block", type: "oled_dino" },
+        { kind: "block", type: "oled_flappy" },
       ],
     },
     {
