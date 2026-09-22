@@ -463,6 +463,7 @@ setInterval(() => {
 }, 500);
 
 let serialPending = "";
+let lastMarkAt = 0; // quando chegou a última linha de monitor/visor/Wi-Fi
 /** Separa as linhas do monitor/visor (marcadas) do texto normal do console. */
 function handleSerialData(text: string) {
   serialPending += text;
@@ -489,6 +490,7 @@ function handleSerialData(text: string) {
       if (kind === MONITOR_MARK) queueMonitorValues(JSON.parse(line));
       else if (kind === WIFI_MARK) showWifiStatus(JSON.parse(line));
       else drawDisplayFrame(line);
+      lastMarkAt = Date.now(); // a placa está mandando dados: tem programa rodando
     } catch {
       /* linha corrompida: ignora */
     }
@@ -578,30 +580,41 @@ async function run(label: string, fn: () => Promise<void>) {
   }
 }
 
-async function connect() {
-  const port = await navigator.serial.requestPort();
-  await board.connect(port);
+/**
+ * Conecta e descobre o estado da placa sem interromper nada: se ela já está
+ * mandando leituras/visor, mostra o painel do programa que está rodando; se
+ * está parada na REPL, zera a placa como antes.
+ */
+async function connect(port?: SerialPort) {
+  const alvo = port ?? (await navigator.serial.requestPort());
+  await board.connect(alvo);
+  autoReconnect = true;
   refreshButtons();
   // o primeiro boot depois da gravação demora (formata a memória): tenta algumas vezes
-  let ok = false;
-  for (let tentativa = 1; tentativa <= 4 && !ok; tentativa++) {
-    setStatus(tentativa === 1 ? "Verificando MicroPython…" : `Verificando MicroPython… (tentativa ${tentativa})`);
-    ok = await board.ping();
-    if (!ok) await new Promise((r) => setTimeout(r, 2000));
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    setStatus(tentativa === 1 ? "Conectando…" : `Conectando… (tentativa ${tentativa})`);
+    const t0 = Date.now();
+    await new Promise((r) => setTimeout(r, 1200));
+    if (lastMarkAt > t0) {
+      monitorMode = "program";
+      setStatus("Conectado — mostrando o programa que já está rodando na placa", "ok");
+      return;
+    }
+    if (await board.atRepl()) {
+      await stopAndReset(); // placa parada: deixa limpa (LED apagado, portas soltas)
+      setStatus("Conectado — MicroPython pronto", "ok");
+      return;
+    }
   }
-  if (ok) {
-    await stopAndReset(); // placa "limpa": programa parado, LED apagado, portas soltas
-    setStatus("Conectado — MicroPython pronto", "ok");
-  } else {
-    setStatus(
-      "A placa não respondeu. Acabou de gravar o MicroPython? Clique em Desconectar, aperte RESET na placa, espere 5 s e conecte de novo. " +
-        "Se nunca gravou, clique em \"Gravar MicroPython\" (só na primeira vez).",
-      "error",
-    );
-  }
+  setStatus(
+    "Conectado, mas a placa não está enviando nada. Se acabou de gravar o MicroPython, aperte RESET. " +
+      "Se o programa dela não usa entradas nem visor, é normal — pode enviar um programa novo.",
+    "error",
+  );
 }
 
 async function disconnect() {
+  autoReconnect = false;
   await board.disconnect();
   monitorMode = null;
   clearMonitorCards();
@@ -613,6 +626,30 @@ async function disconnect() {
 btnConnect.addEventListener("click", () =>
   run("Conexão", () => (board.connected ? disconnect() : connect())),
 );
+
+// Reconexão automática: ao plugar o cabo (ou ao abrir o app com a placa
+// plugada), conecta sozinho numa porta já autorizada e mostra o dashboard.
+let autoReconnect = true;
+// falha aqui não é erro do usuário (porta ocupada por outro programa, por exemplo):
+// tenta em silêncio, sem mensagem vermelha
+async function tryAutoConnect(port: SerialPort) {
+  if (!autoReconnect || board.connected || busy) return;
+  busy = true;
+  try {
+    await connect(port);
+  } catch {
+    /* porta ocupada ou placa sumiu: fica como estava */
+  } finally {
+    busy = false;
+    refreshButtons();
+  }
+}
+if (serialSupported) {
+  navigator.serial.addEventListener("connect", (e) => void tryAutoConnect(e.target as SerialPort));
+  void navigator.serial.getPorts().then((ports) => {
+    if (ports.length === 1) void tryAutoConnect(ports[0]);
+  });
+}
 
 btnUpload.addEventListener("click", () =>
   run("Envio", async () => {

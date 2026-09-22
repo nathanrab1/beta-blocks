@@ -169,6 +169,18 @@ export class Board {
     }
   }
 
+  /**
+   * Manda um Enter e vê se a REPL responde ">>>", ou seja, se a placa está
+   * parada. Não atrapalha um programa que esteja rodando (o Enter vira uma
+   * linha vazia na entrada, que o leitor de teclas ignora).
+   */
+  async atRepl(timeoutMs = 800): Promise<boolean> {
+    this.buffer = "";
+    try { await this.write("\r\n"); } catch { return false; }
+    await sleep(timeoutMs);
+    return this.buffer.includes(">>>");
+  }
+
   /** Verifica se há MicroPython respondendo. */
   async ping(): Promise<boolean> {
     try {
