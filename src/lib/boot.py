@@ -117,24 +117,35 @@ def _ota_atender(cl):
 
 
 def _ota_servidor():
-    try:
-        import network
-        with open('wifi.json') as f:
-            cfg = json.load(f)
-        wlan = network.WLAN(network.STA_IF)
-        wlan.active(True)
+    import network
+    wlan = network.WLAN(network.STA_IF)
+    # Fica esperando ate a placa estar no Wi-Fi: pelo wifi.json (gravado na
+    # primeira conexao) ou porque o programa (main.py) conectou por conta propria.
+    while True:
         try:
-            wlan.config(pm=network.WLAN.PM_NONE)  # sem economia de energia: responde sempre
-        except Exception:
-            pass
-        if not wlan.isconnected():
-            wlan.connect(cfg['ssid'], cfg['senha'])
+            if wlan.isconnected():
+                break
+            with open('wifi.json') as f:
+                cfg = json.load(f)
+            wlan.active(True)
+            try:
+                wlan.config(pm=network.WLAN.PM_NONE)  # sem economia de energia: responde sempre
+            except Exception:
+                pass
+            if wlan.status() != network.STAT_CONNECTING:
+                wlan.connect(cfg['ssid'], cfg['senha'])
             for _ in range(150):
                 if wlan.isconnected():
                     break
                 time.sleep_ms(100)
-        if not wlan.isconnected():
-            return
+        except OSError:
+            pass  # sem wifi.json ainda: tenta de novo daqui a pouco
+        except Exception as e:
+            print('OTA:', e)
+        if wlan.isconnected():
+            break
+        time.sleep_ms(3000)
+    try:
         s = socket.socket()
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(('0.0.0.0', _OTA_PORT))
@@ -150,11 +161,10 @@ def _ota_servidor():
                     cl.close()
                 except Exception:
                     pass
-    except OSError:
-        pass  # sem wifi.json: nunca conectou no Wi-Fi ainda
     except Exception as e:
         print('OTA:', e)
 
 
+_ota_ativo = True  # o main.py ve isto e nao liga o receptor de novo
 _thread.stack_size(32 * 1024)
 _thread.start_new_thread(_ota_servidor, ())
