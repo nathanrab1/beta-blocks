@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacidade · Beta Blocks</title>
+    <style>
+      :root { --bg: #f4f5f7; --panel: #fff; --text: #1f2430; --muted: #6b7280; --accent: #2f80ed; --border: #dfe2e8; }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #14161b; --panel: #1c1f26; --text: #e6e8ec; --muted: #9aa1ad; --accent: #6aa5f5; --border: #2c3039; }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; padding: 32px 16px; background: var(--bg); color: var(--text);
+        font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      main { max-width: 720px; margin: 0 auto; padding: 32px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+      h1 { margin-top: 0; font-size: 28px; }
+      h2 { margin-top: 28px; font-size: 19px; }
+      .sub { color: var(--muted); margin-top: -8px; }
+      a { color: var(--accent); }
+      code { font-size: 14px; }
+      @media (max-width: 520px) { main { padding: 20px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Política de privacidade</h1>
+      <p class="sub">Beta Blocks · atualizada em 24 de setembro de 2026</p>
+
+      <p>
+        O <b>Beta Blocks</b> é um editor de programação em blocos para a placa ESP32-S3-Zero. Ele roda inteiro no
+        seu navegador: não tem servidor próprio, banco de dados nem cadastro.
+      </p>
+
+      <h2>Conexão com o Google Drive (opcional)</h2>
+      <p>
+        Se você clicar em <b>☁ Conectar Drive</b>, o app pede ao Google permissão para usar o seu Google Drive com o
+        escopo <code>drive.file</code>. Com essa permissão o Beta Blocks:
+      </p>
+      <ul>
+        <li>cria a pasta <b>Beta Kit</b> no seu Drive e salva nela os projetos que você mandar salvar;</li>
+        <li>lista, abre e move para a lixeira somente os arquivos que o próprio Beta Blocks criou;</li>
+        <li>lê o endereço de e-mail da conta, para mostrar qual conta está conectada.</li>
+      </ul>
+      <p>
+        O app <b>não</b> consegue ver nenhum outro arquivo do seu Drive, e não acessa Gmail, contatos ou qualquer
+        outro dado da conta.
+      </p>
+
+      <h2>Onde ficam os dados</h2>
+      <p>
+        Os projetos ficam no <b>seu</b> Google Drive, e só você (e quem você compartilhar) tem acesso. A comunicação
+        acontece direto entre o seu navegador e o Google. Nenhum dado é enviado para servidores do Beta Blocks, vendido
+        ou compartilhado com terceiros.
+      </p>
+      <p>
+        No próprio navegador ficam guardados (armazenamento local) o projeto em edição, o e-mail da última conta
+        conectada e o endereço IP da placa na rede Wi-Fi, só para facilitar o uso. O token de acesso do Google fica
+        apenas na memória da página e some ao fechá-la.
+      </p>
+
+      <h2>Como desconectar</h2>
+      <p>
+        Em <b>☁ Meus projetos → Sair da conta</b>, o Beta Blocks revoga a permissão no Google. Você também pode
+        remover o acesso a qualquer momento em
+        <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>. Os projetos
+        continuam na pasta Beta Kit do seu Drive até você apagá-los.
+      </p>
+
+      <h2>Uso das informações do Google</h2>
+      <p>
+        O uso e a transferência das informações recebidas das APIs do Google seguem a
+        <a href="https://developers.google.com/terms/api-services-user-data-policy">Política de dados do usuário dos
+        serviços de API do Google</a>, incluindo os requisitos de uso limitado.
+      </p>
+
+      <h2>Contato</h2>
+      <p>
+        Dúvidas ou pedidos: abra uma conversa em
+        <a href="https://github.com/nathanrab1/beta-blocks/issues">github.com/nathanrab1/beta-blocks/issues</a>.
+      </p>
+
+      <p><a href="./">← Voltar para o Beta Blocks</a></p>
+    </main>
+  </body>
+</html>
