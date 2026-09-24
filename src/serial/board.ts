@@ -115,8 +115,11 @@ export class Board {
    * quadros do visor) continuariam imprimindo e bagunçariam a raw REPL.
    */
   async stop(): Promise<void> {
-    await this.write("\r\x03\x03");
-    await sleep(100);
+    // Ctrl-C espaçados: um que caia dentro de um timer da placa é engolido por ele
+    for (let i = 0; i < 3; i++) {
+      await this.write(i === 0 ? "\r\x03" : "\x03");
+      await sleep(80);
+    }
     await this.write("import machine\r\n");
     await this.write("for _i in range(4): machine.Timer(_i).deinit()\r\n\r\n");
     await this.write("_bb_rodando = False\r\n"); // pilhas "ao iniciar" em threads saem dos lacos

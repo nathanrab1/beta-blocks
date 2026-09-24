@@ -407,8 +407,8 @@ export function defineBlocks(): void {
   pythonGenerator.forBlock["wait_ms"] = (block, gen) => {
     const t = gen.valueToCode(block, "TIME", Order.NONE) || "0";
     return block.getFieldValue("UNIT") === "S"
-      ? `time.sleep(${t})\n`
-      : `time.sleep_ms(int(${t}))\n`;
+      ? `_bb_esperar((${t}) * 1000)\n`
+      : `_bb_esperar(${t})\n`;
   };
 
   pythonGenerator.forBlock["port_onoff"] = (block) => {
@@ -467,17 +467,31 @@ export function defineBlocks(): void {
     return `visor_grafico(${v})\n`;
   };
   pythonGenerator.forBlock["oled_clear"] = () => "visor_limpar()\n";
-  pythonGenerator.forBlock["oled_snake"] = () => "visor_cobrinha()\n";
-  pythonGenerator.forBlock["oled_dino"] = () => "visor_dino()\n";
-  pythonGenerator.forBlock["oled_flappy"] = () => "visor_flappy()\n";
+  pythonGenerator.forBlock["oled_snake"] = () => "_jogo_rodar(visor_cobrinha)\n";
+  pythonGenerator.forBlock["oled_dino"] = () => "_jogo_rodar(visor_dino)\n";
+  pythonGenerator.forBlock["oled_flappy"] = () => "_jogo_rodar(visor_flappy)\n";
   pythonGenerator.forBlock["game_speed"] = (block) => {
     const v = Math.min(10, Math.max(1, Number(block.getFieldValue("SPEED")) || 5));
     return `_jogo_velocidade = ${v}\n`;
   };
 
+  // todo laço passa por _bb_ponto() a cada volta: é onde um evento novo interrompe
   pythonGenerator.forBlock["forever"] = (block, gen) => {
-    const branch = gen.statementToCode(block, "DO") || gen.PASS;
-    return `while _bb_rodando:\n${branch}`;
+    const branch = gen.statementToCode(block, "DO");
+    return `while _bb_rodando:\n${gen.INDENT}_bb_ponto()\n${branch}`;
+  };
+
+  pythonGenerator.forBlock["controls_repeat_ext"] = (block, gen) => {
+    const times = gen.valueToCode(block, "TIMES", Order.NONE) || "0";
+    const branch = gen.statementToCode(block, "DO");
+    return `for _ in range(int(${times})):\n${gen.INDENT}_bb_ponto()\n${branch}`;
+  };
+
+  pythonGenerator.forBlock["controls_whileUntil"] = (block, gen) => {
+    const until = block.getFieldValue("MODE") === "UNTIL";
+    const cond = gen.valueToCode(block, "BOOL", until ? Order.LOGICAL_NOT : Order.NONE) || "False";
+    const branch = gen.statementToCode(block, "DO");
+    return `while ${until ? `not ${cond}` : cond}:\n${gen.INDENT}_bb_ponto()\n${branch}`;
   };
 }
 
@@ -709,6 +723,71 @@ export function preamble(pin: number): string {
     "# vira False quando o app manda parar (botao Parar ou novo envio): encerra os lacos",
     "_bb_rodando = True",
     "",
+    "# Ctrl-C (botao Parar) que cai dentro de um timer seria engolido por ele:",
+    "# o timer so anota, e o programa para no proximo _bb_ponto()",
+    "_bb_ctrl_c = False",
+    "",
+    "def _bb_protegido(f):",
+    "    def cb(t):",
+    "        global _bb_ctrl_c",
+    "        try:",
+    "            f(t)",
+    "        except KeyboardInterrupt:",
+    "            _bb_ctrl_c = True",
+    "    return cb",
+    "",
+    "# --- eventos: o leitor de teclas/Wi-Fi so anota o evento; quem roda e o programa ---",
+    "# Todo repetir e esperar passa por _bb_ponto(): se chegou um evento novo, o evento",
+    "# que estava rodando para (o ultimo comando manda) e o 'ao iniciar' so pausa.",
+    "class _BBInterrompe(BaseException):",
+    "    pass",
+    "",
+    "_bb_pendente = None",
+    "_bb_em_evento = False",
+    "",
+    "def _bb_evento(f):",
+    "    def disparar():",
+    "        global _bb_pendente",
+    "        _bb_pendente = f",
+    "    return disparar",
+    "",
+    "def _bb_rodar_eventos():",
+    "    global _bb_pendente, _bb_em_evento",
+    "    while _bb_pendente is not None and _bb_rodando:",
+    "        f, _bb_pendente = _bb_pendente, None",
+    "        _bb_em_evento = True",
+    "        try:",
+    "            f()",
+    "        except _BBInterrompe:",
+    "            pass",
+    "        finally:",
+    "            _bb_em_evento = False",
+    "",
+    "_bb_folga = time.ticks_ms()",
+    "",
+    "def _bb_ponto():",
+    "    global _bb_folga",
+    "    if _bb_ctrl_c:",
+    "        raise KeyboardInterrupt()",
+    "    # laco sem esperar: a cada 20 ms cede 1 ms, senao o USB (parar/enviar) e o Wi-Fi nao rodam",
+    "    agora = time.ticks_ms()",
+    "    if time.ticks_diff(agora, _bb_folga) >= 20:",
+    "        _bb_folga = agora",
+    "        time.sleep_ms(1)",
+    "    if _bb_pendente is not None:",
+    "        if _bb_em_evento:",
+    "            raise _BBInterrompe()",
+    "        _bb_rodar_eventos()",
+    "",
+    "def _bb_esperar(ms):",
+    "    fim = time.ticks_add(time.ticks_ms(), int(ms))",
+    "    while True:",
+    "        _bb_ponto()",
+    "        falta = time.ticks_diff(fim, time.ticks_ms())",
+    "        if falta <= 0:",
+    "            return",
+    "        time.sleep_ms(min(falta, 20))",
+    "",
     "_pwms = {}",
     "",
     "def porta_ligar(n, on):",
@@ -733,11 +812,15 @@ export function preamble(pin: number): string {
     "    if n not in _adcs:",
     "        _adcs[n] = ADC(Pin(n), atten=ADC.ATTN_11DB)",
     "        _adc_hist[n] = []",
+    "    a = _adcs[n]",
+    "    s = 0",
+    "    for _ in range(8):  # 8 leituras seguidas (menos de 1 ms) tiram o ruido na hora",
+    "        s += a.read_u16()",
     "    h = _adc_hist[n]",
-    "    h.append(_adcs[n].read_u16())",
-    "    if len(h) > 30:",
+    "    h.append(s / 8)",
+    "    if len(h) > 20:",
     "        del h[0]",
-    "    p = sum(h) / len(h) * 100 / 65535  # media movel das ultimas 30 leituras",
+    "    p = sum(h) / len(h) * 100 / 65535  # media movel dos 20 ultimos dados",
     "    # ate 5% vale 0 e de 95% em diante vale 100; o meio (5..95) vira 0..100",
     "    if p <= 5:",
     "        return 0",
@@ -789,7 +872,7 @@ export function programCode(workspace: Blockly.Workspace): string {
     if (Array.isArray(body)) body = body[0];
     const key = hat.getFieldValue("KEY");
     code += `def _tecla_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
-    code += `_teclas[${JSON.stringify(key)}] = _tecla_${i}\n\n`;
+    code += `_teclas[${JSON.stringify(key)}] = _bb_evento(_tecla_${i})\n\n`;
   });
 
   // "quando receber ... pelo Wi-Fi": cada pilha vira um botão na página de controle
@@ -801,7 +884,7 @@ export function programCode(workspace: Blockly.Workspace): string {
     if (Array.isArray(body)) body = body[0];
     const name = hat.getFieldValue("NAME");
     code += `def _wifi_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
-    code += `_wifi_nomes.append(${JSON.stringify(name)})\n_wifi_funcs.append(_wifi_${i})\n\n`;
+    code += `_wifi_nomes.append(${JSON.stringify(name)})\n_wifi_funcs.append(_bb_evento(_wifi_${i}))\n\n`;
   });
 
   // "ao iniciar" (existe só um no espaço de trabalho)
@@ -814,7 +897,7 @@ export function programCode(workspace: Blockly.Workspace): string {
 
   // com teclas ou Wi-Fi, o programa precisa continuar vivo para receber os eventos
   if (keyHats.length > 0 || wifiHats.length > 0) {
-    code += "\n# espera os eventos\nwhile True:\n    time.sleep_ms(100)\n";
+    code += "\n# roda os eventos que chegarem\nwhile True:\n    _bb_ponto()\n    time.sleep_ms(20)\n";
   }
   return pythonGenerator.finish(code);
 }
@@ -966,7 +1049,7 @@ function wifiRuntimeCode(): string {
     "        s.setblocking(False)",
     "        _wifi_srv = s",
     "        _wifi_timer = Timer(0)",
-    "        _wifi_timer.init(period=50, mode=Timer.PERIODIC, callback=_wifi_atender)",
+    "        _wifi_timer.init(period=50, mode=Timer.PERIODIC, callback=_bb_protegido(_wifi_atender))",
     "",
     "",
   ].join("\n");
@@ -1006,7 +1089,7 @@ function keysRuntimeCode(): string {
     "        pass",
     "",
     "_key_timer = Timer(1)",
-    "_key_timer.init(period=50, mode=Timer.PERIODIC, callback=_tecla_ler)",
+    "_key_timer.init(period=50, mode=Timer.PERIODIC, callback=_bb_protegido(_tecla_ler))",
     "",
     "",
   ].join("\n");
@@ -1069,7 +1152,7 @@ export function monitorCode(pins: InputPins): string {
     "except NameError:",
     "    pass",
     "_bb_timer = Timer(3)",
-    "_bb_timer.init(period=100, mode=Timer.PERIODIC, callback=_monitor)",
+    "_bb_timer.init(period=100, mode=Timer.PERIODIC, callback=_bb_protegido(_monitor))",
     "",
     "",
   ].join("\n");
@@ -1115,6 +1198,15 @@ function gamesCommonCode(): string {
     "_jogo_tecla = False  # alguma tecla do jogo foi apertada?",
     "_jogo_velocidade = 5  # 1..10, mudado pelo bloco 'velocidade do jogo'",
     "",
+    "# o jogo troca as teclas dele em _teclas; ao sair (ou ser interrompido) devolve as do programa",
+    "def _jogo_rodar(jogo):",
+    "    antes = dict(_teclas)",
+    "    try:",
+    "        jogo()",
+    "    finally:",
+    "        _teclas.clear()",
+    "        _teclas.update(antes)",
+    "",
     "def _jogo_centro(txt, y):",
     "    oled.text(txt, max(0, (oled.width - len(txt) * 8) // 2), y, 1)",
     "",
@@ -1128,10 +1220,10 @@ function gamesCommonCode(): string {
     "        _jogo_centro(sub, 26 if alto else 12)",
     "    _jogo_centro(dica, oled.height - (12 if alto else 8))",
     "    _visor_mostrar()",
-    "    time.sleep_ms(500)",
+    "    _bb_esperar(500)",
     "    _jogo_tecla = False",
     "    while not _jogo_tecla and _bb_rodando:",
-    "        time.sleep_ms(50)",
+    "        _bb_esperar(50)",
     "",
     "# sprite a partir de linhas de texto ('#' = pixel aceso) -> (framebuffer, largura, altura)",
     "def _jogo_sprite(linhas):",
@@ -1209,7 +1301,7 @@ function snakeCode(): string {
     "                oled.fill_rect(OX + sx * C, OY + sy * C, C, C, 1)",
     "            oled.rect(OX + maca[0] * C, OY + maca[1] * C, C, C, 1)",
     "            _visor_mostrar()",
-    "            time.sleep_ms(passo)",
+    "            _bb_esperar(passo)",
     "            if led_ate is not None and time.ticks_diff(time.ticks_ms(), led_ate) >= 0:",
     "                led_rgb(0, 0, 0)",
     "                led_ate = None",
@@ -1364,7 +1456,7 @@ function dinoCode(): string {
     "            else:",
     "                oled.blit(dino_a if not no_chao or (quadro // 3) % 2 == 0 else dino_b, x, int(y), 0)",
     "            _visor_mostrar()",
-    "            time.sleep_ms(25)",
+    "            _bb_esperar(25)",
     "            if led_ate is not None and time.ticks_diff(time.ticks_ms(), led_ate) >= 0:",
     "                led_rgb(0, 0, 0)",
     "                led_ate = None",
@@ -1468,7 +1560,7 @@ function flappyCode(): string {
     "            oled.blit(ave_a if vy < 0 and (quadro // 2) % 2 == 0 else ave_b, X, yi, 0)",
     "            oled.text(str(pontos), W - len(str(pontos)) * 8, 0, 1)",
     "            _visor_mostrar()",
-    "            time.sleep_ms(25)",
+    "            _bb_esperar(25)",
     "            if led_ate is not None and time.ticks_diff(time.ticks_ms(), led_ate) >= 0:",
     "                led_rgb(0, 0, 0)",
     "                led_ate = None",
@@ -1495,7 +1587,7 @@ export const DISPLAY_MARK = "\x1f";
 export function oledCode(): string {
   return [
     "# --- visor OLED ---",
-    "from machine import SoftI2C",
+    "from machine import I2C, SoftI2C",
     "import framebuf, binascii",
     "try:",
     "    import ssd1306",
@@ -1513,26 +1605,34 @@ export function oledCode(): string {
     "",
     "oled = None",
     "_vis_dirty = False",
+    "# copia do ultimo quadro completo: o preview nunca pega a tela no meio de um redesenho",
+    "_vis_quadro = None",
     "",
     "def _visor_flush(t=None):",
     "    global _vis_dirty",
-    "    if _vis_dirty and oled is not None:",
+    "    if _vis_dirty and _vis_quadro is not None:",
     "        _vis_dirty = False",
-    "        print('\\x1f%d,%d,' % (oled.width, oled.height) + binascii.b2a_base64(oled.buffer).decode().strip())",
+    "        print('\\x1f%d,%d,' % (oled.width, oled.height) + binascii.b2a_base64(_vis_quadro).decode().strip())",
     "",
     "_vis_timer = Timer(2)",
-    "_vis_timer.init(period=100, mode=Timer.PERIODIC, callback=_visor_flush)",
+    "_vis_timer.init(period=100, mode=Timer.PERIODIC, callback=_bb_protegido(_visor_flush))",
     "",
     "def _visor_mostrar():",
-    "    global _vis_dirty",
+    "    global _vis_dirty, _vis_quadro",
     "    oled.show()",
+    "    if _vis_quadro is None or len(_vis_quadro) != len(oled.buffer):",
+    "        _vis_quadro = bytearray(len(oled.buffer))",
+    "    _vis_quadro[:] = oled.buffer",
     "    _vis_dirty = True",
     "",
     "def visor_iniciar(sda, scl, w, h):",
     "    global oled",
     "    oled = None",
     "    try:",
-    "        i2c = SoftI2C(sda=Pin(sda), scl=Pin(scl), freq=400000)",
+    "        try:",
+    "            i2c = I2C(0, sda=Pin(sda), scl=Pin(scl), freq=400000)  # por hardware: bem mais rapido",
+    "        except Exception:",
+    "            i2c = SoftI2C(sda=Pin(sda), scl=Pin(scl), freq=400000)",
     "        addrs = i2c.scan()",
     "        if addrs and ssd1306:",
     "            addr = 0x3C if 0x3C in addrs else addrs[0]",
@@ -1594,22 +1694,24 @@ export function oledCode(): string {
     "    'p': '##.|#.#|##.|#..|#..', 'o': '###|#.#|#.#|#.#|###',",
     "}",
     "",
-    "def _visor_mini(txt, x, y):",
+    "def _visor_mini(txt, x, y, alvo=None):",
+    "    alvo = alvo or oled",
     "    for ch in txt:",
     "        g = _MINI.get(ch)",
     "        if g:",
     "            for r, linha in enumerate(g.split('|')):",
     "                for c in range(3):",
     "                    if linha[c] == '#':",
-    "                        oled.pixel(x + c, y + r, 1)",
+    "                        alvo.pixel(x + c, y + r, 1)",
     "        x += 4",
     "",
     "# grafico: um ponto por chamada, eixo Y em % e eixo X no tempo",
     "_graf = []",
     "_graf_t0 = None",
+    "_graf_fundo = None  # (largura, altura, bytes) dos eixos e rotulos fixos",
     "",
     "def visor_grafico(v):",
-    "    global _graf_t0",
+    "    global _graf_t0, _graf_fundo",
     "    _visor_garantir()",
     "    if _graf_t0 is None:",
     "        _graf_t0 = time.ticks_ms()",
@@ -1625,19 +1727,23 @@ export function oledCode(): string {
     "    _graf.append(v)",
     "    if len(_graf) > W:",
     "        del _graf[0]",
-    "    oled.fill(0)",
-    "    oled.vline(X0 - 1, Y0, Y1 - Y0 + 1, 1)  # eixo %",
-    "    oled.hline(X0 - 1, Y1, W + 1, 1)        # eixo tempo",
-    "    _visor_mini('100%', 0, Y0 - 2 if alto else 0)",
-    "    _visor_mini('0%', 8, Y1 - 4)",
-    "    if alto:",
-    "        _visor_mini('50%', 4, (Y0 + Y1) // 2 - 2)",
-    "        oled.hline(X0 - 3, (Y0 + Y1) // 2, 2, 1)",
-    "    _visor_mini('tempo', X0, Y1 + 2)",
+    "    if _graf_fundo is None or _graf_fundo[:2] != (oled.width, oled.height):",
+    "        buf = bytearray(len(oled.buffer))",
+    "        f = framebuf.FrameBuffer(buf, oled.width, oled.height, framebuf.MONO_VLSB)",
+    "        f.vline(X0 - 1, Y0, Y1 - Y0 + 1, 1)  # eixo %",
+    "        f.hline(X0 - 1, Y1, W + 1, 1)        # eixo tempo",
+    "        _visor_mini('100%', 0, Y0 - 2 if alto else 0, f)",
+    "        _visor_mini('0%', 8, Y1 - 4, f)",
+    "        if alto:",
+    "            _visor_mini('50%', 4, (Y0 + Y1) // 2 - 2, f)",
+    "            f.hline(X0 - 3, (Y0 + Y1) // 2, 2, 1)",
+    "        _visor_mini('tempo', X0, Y1 + 2, f)",
+    "        for i in range(10, W, 10):  # marquinhas de tempo",
+    "            f.pixel(X0 + i, Y1 - 1, 1)",
+    "        _graf_fundo = (oled.width, oled.height, buf)",
+    "    oled.buffer[:] = _graf_fundo[2]  # copia o fundo pronto (bem mais rapido que redesenhar)",
     "    seg = '%ds' % (time.ticks_diff(time.ticks_ms(), _graf_t0) // 1000)",
     "    _visor_mini(seg, oled.width - len(seg) * 4 + 1, Y1 + 2)",
-    "    for i in range(10, W, 10):  # marquinhas de tempo",
-    "        oled.pixel(X0 + i, Y1 - 1, 1)",
     "    py = None",
     "    for i, val in enumerate(_graf):",
     "        x = X0 + i",
