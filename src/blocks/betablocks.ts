@@ -11,6 +11,7 @@ const INPUT_COLOUR = 160;
 const OLED_COLOUR = 260;
 const WIFI_COLOUR = 290;
 const GAME_COLOUR = 330;
+const TEXT_COLOUR = 70;
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
 const NAMED_COLORS: Record<string, [number, number, number]> = {
@@ -368,6 +369,7 @@ export function defineBlocks(): void {
   ]);
 
   defineDrawBlock();
+  defineTextJoinBlock();
 
   // ---- Geradores Python ----
 
@@ -588,6 +590,104 @@ function defineDrawBlock() {
       this.bitmapB64 = state.bitmap || emptyBitmapB64();
       (this.getField("PREVIEW") as Blockly.FieldImage).setValue(bitmapToDataUrl(this.bitmapB64));
     },
+  };
+}
+
+// ---- bloco "juntar" (texto) com botões + e − ----
+
+type JoinBlock = Blockly.BlockSvg & { itemCount: number; updateShape(): void };
+
+const JOIN_MIN = 2;
+
+const roundButton = (sign: string) =>
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22">' +
+      '<circle cx="11" cy="11" r="10" fill="#fff" stroke="#8a8f99"/>' +
+      `<text x="11" y="16" font-family="sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#333">${sign}</text>` +
+      "</svg>",
+  );
+const PLUS_SRC = roundButton("+");
+const MINUS_SRC = roundButton("−");
+
+/** Aplica `change` no bloco registrando a mutação (desfazer, salvar e gerar código). */
+function mutateJoin(block: JoinBlock, change: () => void, after?: () => void) {
+  const old = JSON.stringify({ itemCount: block.itemCount });
+  Blockly.Events.setGroup(true);
+  try {
+    change();
+    block.updateShape();
+    Blockly.Events.fire(
+      new Blockly.Events.BlockChange(block, "mutation", null, old, JSON.stringify({ itemCount: block.itemCount })),
+    );
+    after?.();
+  } finally {
+    Blockly.Events.setGroup(false);
+  }
+}
+
+function defineTextJoinBlock() {
+  Blockly.Blocks["text_join_plus"] = {
+    init(this: JoinBlock) {
+      this.itemCount = JOIN_MIN;
+      this.setOutput(true, null);
+      this.setInputsInline(true);
+      this.setColour(TEXT_COLOUR);
+      this.setTooltip("Junta textos e números num texto só. Use + para juntar mais itens e − para tirar.");
+      this.updateShape();
+    },
+    saveExtraState(this: JoinBlock) {
+      return { itemCount: this.itemCount };
+    },
+    loadExtraState(this: JoinBlock, state: { itemCount?: number }) {
+      this.itemCount = Math.max(JOIN_MIN, state.itemCount ?? JOIN_MIN);
+      this.updateShape();
+    },
+    updateShape(this: JoinBlock) {
+      if (this.getInput("BUTTONS")) this.removeInput("BUTTONS");
+      for (let i = 0; i < this.itemCount; i++) {
+        if (!this.getInput(`ADD${i}`)) {
+          const input = this.appendValueInput(`ADD${i}`);
+          if (i === 0) input.appendField("juntar");
+        }
+      }
+      // itens a mais (botão −): o bloco encaixado sai e fica solto
+      for (let i = this.itemCount; this.getInput(`ADD${i}`); i++) this.removeInput(`ADD${i}`);
+
+      const buttons = this.appendDummyInput("BUTTONS");
+      buttons.appendField(
+        new Blockly.FieldImage(PLUS_SRC, 22, 22, "+", () => {
+          if (this.isInFlyout) return;
+          mutateJoin(
+            this,
+            () => this.itemCount++,
+            // o novo item já vem com um texto vazio para digitar
+            () => this.getInput(`ADD${this.itemCount - 1}`)!.connection!.setShadowState({ type: "text", fields: { TEXT: "" } }),
+          );
+        }),
+      );
+      if (this.itemCount > JOIN_MIN) {
+        buttons.appendField(
+          new Blockly.FieldImage(MINUS_SRC, 22, 22, "−", () => {
+            if (this.isInFlyout) return;
+            mutateJoin(this, () => this.itemCount--);
+          }),
+        );
+      }
+    },
+  };
+
+  pythonGenerator.forBlock["text_join_plus"] = (block, gen) => {
+    const parts: string[] = [];
+    for (let i = 0; i < (block as JoinBlock).itemCount; i++) {
+      const code = gen.valueToCode(block, `ADD${i}`, Order.NONE);
+      if (!code || code === "''") continue;
+      // textos já são str; números, leituras e o resto viram texto
+      parts.push(block.getInputTargetBlock(`ADD${i}`)?.type === "text" ? code : `str(${code})`);
+    }
+    if (parts.length === 0) return ["''", Order.ATOMIC];
+    if (parts.length === 1) return [parts[0], Order.FUNCTION_CALL];
+    return [parts.join(" + "), Order.ADDITIVE];
   };
 }
 
@@ -1701,6 +1801,22 @@ export const toolbox = {
         { kind: "block", type: "logic_operation" },
         { kind: "block", type: "logic_negate" },
         { kind: "block", type: "logic_boolean" },
+      ],
+    },
+    {
+      kind: "category",
+      name: "Texto",
+      colour: TEXT_COLOUR,
+      contents: [
+        { kind: "block", type: "text", fields: { TEXT: "Ola" } },
+        {
+          kind: "block",
+          type: "text_join_plus",
+          inputs: {
+            ADD0: { shadow: { type: "text", fields: { TEXT: "Valor: " } } },
+            ADD1: { shadow: { type: "text", fields: { TEXT: "" } } },
+          },
+        },
       ],
     },
     // Categorias desativadas por enquanto (descomente para reativar):
