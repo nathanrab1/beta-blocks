@@ -26,6 +26,21 @@ import ssd1306Source from "./lib/ssd1306.py?raw";
 import bootSource from "./lib/boot.py?raw";
 import { Board, ReplError } from "./serial/board";
 import { flashMicroPython, loadFirmware } from "./serial/flasher";
+import {
+  DriveError,
+  driveConfigured,
+  listProjects,
+  loadProject,
+  preloadGoogle,
+  saveProject,
+  signIn,
+  signOut,
+  signedInEmail,
+  rememberedEmail,
+  trashProject,
+  type DriveFile,
+} from "./drive";
+import { workspaceThumbnail } from "./thumbnail";
 
 const STORAGE_KEY = "betablocks.workspace";
 
@@ -220,18 +235,42 @@ updateCode();
 // ---------- baixar / abrir projeto ----------
 const PROJECT_FORMAT = "beta-blocks";
 
+function projectJson(thumbnail: string | null = null): string {
+  return JSON.stringify(
+    {
+      format: PROJECT_FORMAT,
+      version: 1,
+      savedAt: new Date().toISOString(),
+      ...(thumbnail ? { thumbnail } : {}),
+      workspace: Blockly.serialization.workspaces.save(workspace),
+    },
+    null,
+    2,
+  );
+}
+
+/** Troca o projeto na tela. Devolve false se a pessoa desistiu de substituir. */
+function openProject(data: any): boolean {
+  // aceita o arquivo do Beta Blocks ou um workspace do Blockly puro
+  const state = data?.format === PROJECT_FORMAT ? data.workspace : data?.blocks ? data : null;
+  if (!state) throw new Error("não é um projeto do Beta Blocks");
+  if (workspace.getAllBlocks(false).length > 1 && !confirm("Substituir o projeto atual?")) return false;
+  Blockly.Events.setGroup(true);
+  try {
+    workspace.clear();
+    Blockly.serialization.workspaces.load(state, workspace);
+    ensureStartBlock();
+  } finally {
+    Blockly.Events.setGroup(false);
+  }
+  return true;
+}
+
 $("btn-save").addEventListener("click", () => {
-  const project = {
-    format: PROJECT_FORMAT,
-    version: 1,
-    savedAt: new Date().toISOString(),
-    workspace: Blockly.serialization.workspaces.save(workspace),
-  };
-  const blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const nome = prompt("Nome do projeto:", "meu-projeto")?.trim();
+  const nome = prompt("Nome do projeto:", driveFile ? projectTitle(driveFile.name) : "meu-projeto")?.trim();
   if (!nome) return;
+  const url = URL.createObjectURL(new Blob([projectJson()], { type: "application/json" }));
+  const a = document.createElement("a");
   a.href = url;
   a.download = `${nome.replace(/[^\w.-]+/g, "-")}.json`;
   a.click();
@@ -248,24 +287,184 @@ fileLoad.addEventListener("change", async () => {
   const file = fileLoad.files?.[0];
   if (!file) return;
   try {
-    const data = JSON.parse(await file.text());
-    // aceita o arquivo do Beta Blocks ou um workspace do Blockly puro
-    const state = data.format === PROJECT_FORMAT ? data.workspace : data.blocks ? data : null;
-    if (!state) throw new Error("não é um projeto do Beta Blocks");
-    if (workspace.getAllBlocks(false).length > 0 && !confirm("Substituir o projeto atual pelo arquivo aberto?")) return;
-    Blockly.Events.setGroup(true);
-    try {
-      workspace.clear();
-      Blockly.serialization.workspaces.load(state, workspace);
-      ensureStartBlock();
-    } finally {
-      Blockly.Events.setGroup(false);
-    }
+    if (!openProject(JSON.parse(await file.text()))) return;
+    setDriveFile(null);
     setStatus(`Projeto aberto: ${file.name}`, "ok");
   } catch (err) {
     setStatus(`Não deu para abrir ${file.name}: ${(err as Error).message}`, "error");
   }
 });
+
+// ---------- Google Drive (pasta "Beta Kit") ----------
+const DRIVE_FILE_KEY = "betablocks.driveFile";
+const projectName = $("project-name");
+const driveModal = $("drive-modal");
+const driveList = $("drive-list");
+const driveUser = $("drive-user");
+
+/** Arquivo do Drive de onde veio o projeto na tela: "Salvar no Drive" sobrescreve ele. */
+let driveFile: { id: string; name: string } | null = null;
+try {
+  driveFile = JSON.parse(localStorage.getItem(DRIVE_FILE_KEY) ?? "null");
+} catch { /* sem arquivo */ }
+
+const projectTitle = (fileName: string) => fileName.replace(/\.json$/i, "");
+
+function setDriveFile(f: { id: string; name: string } | null) {
+  driveFile = f;
+  if (f) localStorage.setItem(DRIVE_FILE_KEY, JSON.stringify(f));
+  else localStorage.removeItem(DRIVE_FILE_KEY);
+  projectName.textContent = f ? `☁ ${projectTitle(f.name)}` : "";
+}
+setDriveFile(driveFile);
+
+function driveFail(err: unknown) {
+  if (err instanceof DriveError && err.status === 404) setDriveFile(null);
+  const msg = err instanceof DriveError && err.status === 404
+    ? "o arquivo não está mais no Drive, salve de novo"
+    : (err as Error).message;
+  setStatus(`Google Drive: ${msg}`, "error");
+}
+
+/** Roda `task` depois do login. O login sai direto do clique para o pop-up não ser bloqueado. */
+function withGoogle(task: () => Promise<void>) {
+  signIn().then(task).catch(driveFail);
+}
+
+async function saveToDrive(asNew: boolean) {
+  let name = driveFile?.name;
+  let id = asNew ? undefined : driveFile?.id;
+  if (asNew || !driveFile) {
+    const nome = prompt("Nome do projeto:", driveFile ? projectTitle(driveFile.name) : "meu-projeto")?.trim();
+    if (!nome) return;
+    name = `${nome}.json`;
+    const same = (await listProjects()).find((f) => f.name === name);
+    if (same) {
+      if (!confirm(`Já existe "${nome}" no Drive. Substituir?`)) return;
+      id = same.id;
+    }
+  }
+  setStatus("Salvando no Google Drive…");
+  const thumb = await workspaceThumbnail(workspace);
+  const f = await saveProject(name!, projectJson(thumb), thumb, id);
+  setDriveFile({ id: f.id, name: f.name });
+  setStatus(`Salvo no Google Drive: Beta Kit/${projectTitle(f.name)}`, "ok");
+}
+
+/** Antes de conectar só aparece "Conectar Drive"; depois, salvar e abrir. */
+function updateDriveButtons() {
+  const email = rememberedEmail();
+  $("btn-drive-connect").hidden = email !== null;
+  $("btn-drive-save").hidden = email === null;
+  $("btn-drive-open").hidden = email === null;
+  $("btn-drive-open").title = email ? `Projetos da pasta Beta Kit no Drive de ${email}` : "";
+}
+
+$("btn-drive-connect").addEventListener("click", () =>
+  withGoogle(async () => {
+    updateDriveButtons();
+    setStatus(`Google Drive conectado: ${signedInEmail()}`, "ok");
+  }),
+);
+$("btn-drive-save").addEventListener("click", () => withGoogle(() => saveToDrive(false)));
+
+$("btn-drive-open").addEventListener("click", () =>
+  withGoogle(async () => {
+    driveUser.textContent = signedInEmail() ?? "";
+    driveList.innerHTML = `<p class="drive-empty">Carregando…</p>`;
+    driveModal.hidden = false;
+    renderDriveList(await listProjects());
+  }),
+);
+
+const closeDriveModal = () => (driveModal.hidden = true);
+$("btn-drive-close").addEventListener("click", closeDriveModal);
+driveModal.addEventListener("click", (e) => {
+  if (e.target === driveModal) closeDriveModal();
+});
+$("btn-drive-saveas").addEventListener("click", () => {
+  closeDriveModal();
+  withGoogle(() => saveToDrive(true));
+});
+$("btn-drive-logout").addEventListener("click", () => {
+  signOut();
+  closeDriveModal();
+  setDriveFile(null);
+  updateDriveButtons();
+  setStatus("Saiu da conta do Google");
+});
+
+// conteúdo já baixado (miniatura e abrir), por id + data de modificação
+const driveCache = new Map<string, Promise<any>>();
+function driveContent(f: DriveFile) {
+  const key = `${f.id}@${f.modifiedTime}`;
+  let p = driveCache.get(key);
+  if (!p) {
+    p = loadProject(f.id);
+    p.catch(() => driveCache.delete(key));
+    driveCache.set(key, p);
+  }
+  return p;
+}
+
+function renderDriveList(files: DriveFile[]) {
+  if (!files.length) {
+    driveList.innerHTML = `<p class="drive-empty">Nenhum projeto ainda. Use <b>☁ Salvar no Drive</b>.</p>`;
+    return;
+  }
+  const quando = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  driveList.replaceChildren(
+    ...files.map((f) => {
+      const item = document.createElement("div");
+      item.className = "drive-item";
+      item.classList.toggle("current", f.id === driveFile?.id);
+      item.innerHTML = `<div class="drive-thumb"></div><div class="drive-name"></div><div class="drive-date"></div>
+        <button class="drive-trash" title="Mover para a lixeira do Drive">🗑</button>`;
+      item.querySelector(".drive-name")!.textContent = projectTitle(f.name);
+      item.querySelector(".drive-date")!.textContent = quando.format(new Date(f.modifiedTime));
+      item.title = `Abrir ${projectTitle(f.name)}`;
+      driveContent(f)
+        .then((data) => {
+          if (typeof data?.thumbnail !== "string" || !data.thumbnail.startsWith("data:image/")) return;
+          const img = document.createElement("img");
+          img.src = data.thumbnail;
+          img.alt = "";
+          item.querySelector(".drive-thumb")!.appendChild(img);
+        })
+        .catch(() => {});
+      item.addEventListener("click", async () => {
+        try {
+          setStatus(`Abrindo ${projectTitle(f.name)}…`);
+          if (!openProject(await driveContent(f))) return setStatus("");
+          setDriveFile({ id: f.id, name: f.name });
+          closeDriveModal();
+          setStatus(`Projeto aberto do Drive: ${projectTitle(f.name)}`, "ok");
+        } catch (err) {
+          driveFail(err);
+        }
+      });
+      item.querySelector(".drive-trash")!.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm(`Mover "${projectTitle(f.name)}" para a lixeira do Drive?`)) return;
+        try {
+          await trashProject(f.id);
+          if (f.id === driveFile?.id) setDriveFile(null);
+          renderDriveList(files.filter((x) => x !== f));
+        } catch (err) {
+          driveFail(err);
+        }
+      });
+      return item;
+    }),
+  );
+}
+
+if (driveConfigured()) {
+  preloadGoogle();
+  updateDriveButtons();
+} else {
+  document.querySelectorAll<HTMLElement>(".drive-only").forEach((el) => (el.hidden = true));
+}
 
 // ---------- entradas ao vivo ----------
 const monitorPanel = $("monitor-panel");

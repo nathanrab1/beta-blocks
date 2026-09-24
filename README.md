@@ -57,3 +57,19 @@ No GitHub Pages (HTTPS) o Chrome pede permissão de "acesso à rede local" na pr
 O Chrome tem uma permissão própria de acesso à rede local. Em `chrome://settings/content/localNetworkAccess`, permitir que sites peçam acesso e remover `localhost:5173` de "Not allowed"; depois fechar o Chrome (Cmd+Q) e abrir de novo. No macOS, confira também Ajustes → Privacidade e Segurança → Rede Local → Google Chrome ligado.
 
 Teste rápido de que a placa está na rede: abrir `http://<ip>:8266/ping` (deve mostrar `betablocks`) — no celular ou no Safari.
+
+## Projetos no Google Drive
+
+Os botões **☁ Salvar no Drive** e **☁ Meus projetos** fazem login com a conta Google e guardam os projetos (`.json` com miniatura) na pasta **Beta Kit** do Drive da pessoa. Não há servidor nem banco de dados: tudo roda no navegador (`src/drive.ts`).
+
+O app usa o escopo `drive.file`: só enxerga a pasta e os arquivos que ele mesmo criou, nada mais do Drive. Os botões só aparecem depois de configurar o ID do cliente:
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → criar um projeto.
+2. **APIs e serviços → Biblioteca** → ativar a **Google Drive API**.
+3. **Tela de consentimento OAuth** (Google Auth Platform): tipo **Externo**; nome do app, e-mail de suporte; em **Acesso a dados** adicionar o escopo `.../auth/drive.file`.
+4. **Credenciais → Criar credenciais → ID do cliente OAuth → Aplicativo da Web**. Em **Origens JavaScript autorizadas**: `https://nathanrab1.github.io` e `http://localhost:5173`.
+5. Colar o ID (`....apps.googleusercontent.com`) em `GOOGLE_CLIENT_ID`, no começo de `src/drive.ts`. Ele não é segredo.
+
+Enquanto o app estiver em **modo de teste**, só as contas cadastradas como usuários de teste (até 100) conseguem entrar. Para liberar a todos: **Publicar app** e fazer a verificação da marca (página inicial, política de privacidade, domínio verificado).
+
+Contas de escola (Google Workspace for Education): o administrador pode bloquear apps de terceiros. Para alunos menores de 18 anos, o admin precisa liberar o app em **Admin → Segurança → Controles de acesso a API → Apps de terceiros**, usando o ID do cliente.
