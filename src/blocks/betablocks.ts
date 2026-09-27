@@ -41,6 +41,15 @@ export const KEY_OPTIONS: [string, string][] = [
 export const KEY_MARK = "\x1d";
 
 export function defineBlocks(): void {
+  // "ao receber número = ...": o campo aceita só um número (vírgula vira ponto) ou vazio
+  if (!Blockly.Extensions.isRegistered("radio_number_filter")) {
+    Blockly.Extensions.register("radio_number_filter", function (this: Blockly.Block) {
+      this.getField("NUM")!.setValidator((v: string) => {
+        const t = String(v).trim().replace(",", ".");
+        return t === "" || /^-?\d+(\.\d+)?$/.test(t) ? t : null;
+      });
+    });
+  }
   Blockly.defineBlocksWithJsonArray([
     {
       type: "event_start",
@@ -371,27 +380,32 @@ export function defineBlocks(): void {
     },
     {
       type: "radio_on_number",
-      message0: "ao receber número pelo rádio",
+      message0: "ao receber pelo rádio número = %1",
+      args0: [{ type: "field_input", name: "NUM", text: "" }],
+      extensions: ["radio_number_filter"],
       nextStatement: null,
       hat: "cap",
       colour: RADIO_COLOUR,
       tooltip:
-        "Roda os blocos pendurados quando chega um número de outra placa. Use o bloco 'número recebido'. " +
+        "Roda os blocos pendurados quando chega esse número de outra placa. " +
+        "Deixe vazio para rodar com qualquer número e use o bloco 'número recebido'. " +
         "Mensagens para este mesmo bloco esperam a vez; uma mensagem para outro 'ao receber' ou uma tecla para o que estiver rodando aqui.",
     },
     {
       type: "radio_on_value",
-      message0: "ao receber nome = valor pelo rádio",
+      message0: "ao receber pelo rádio nome = %1",
+      args0: [{ type: "field_input", name: "NAME", text: "" }],
       nextStatement: null,
       hat: "cap",
       colour: RADIO_COLOUR,
       tooltip:
-        "Roda os blocos pendurados quando chega um nome = valor de outra placa. Use 'nome recebido' e 'valor recebido'. " +
+        "Roda os blocos pendurados quando chega um nome = valor com esse nome (maiúsculas e minúsculas tanto faz). " +
+        "Deixe vazio para rodar com qualquer nome. Use 'valor recebido' (e 'nome recebido'). " +
         "Mensagens para este mesmo bloco esperam a vez; uma mensagem para outro 'ao receber' ou uma tecla para o que estiver rodando aqui.",
     },
     {
       type: "radio_on_text",
-      message0: "ao receber texto pelo rádio = %1",
+      message0: "ao receber pelo rádio texto = %1",
       args0: [{ type: "field_input", name: "TEXT", text: "" }],
       nextStatement: null,
       hat: "cap",
@@ -983,9 +997,15 @@ export function programCode(workspace: Blockly.Workspace): string {
     const next = hat.getNextBlock();
     let body = next ? pythonGenerator.blockToCode(next) : "";
     if (Array.isArray(body)) body = body[0];
-    // "ao receber texto = ...": só roda quando chega esse texto (vazio: qualquer um)
-    const texto = hat.type === "radio_on_text" ? String(hat.getFieldValue("TEXT") ?? "").trim() : "";
-    const filtro = texto ? pythonGenerator.quote_(texto) : "None";
+    // o campo do chapéu filtra a mensagem (vazio: qualquer uma)
+    let filtro = "None";
+    if (hat.type === "radio_on_number") {
+      const n = String(hat.getFieldValue("NUM") ?? "").trim();
+      if (n !== "" && Number.isFinite(Number(n))) filtro = String(Number(n));
+    } else {
+      const t = String(hat.getFieldValue(hat.type === "radio_on_text" ? "TEXT" : "NAME") ?? "").trim();
+      if (t) filtro = pythonGenerator.quote_(t);
+    }
     code += `def _radio_ao_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
     code += `_radio_ao['${RADIO_HATS[hat.type]}'].append((${filtro}, _radio_ao_${i}))\n\n`;
   });
@@ -1126,7 +1146,7 @@ function radioCode(): string {
     "    except Exception:",
     "        return ''",
     "",
-    "# 'ao receber texto = ...': sem diferenca de maiusculas nem espacos nas pontas",
+    "# 'ao receber texto/nome = ...': sem diferenca de maiusculas nem espacos nas pontas",
     "def _radio_igual(a, b):",
     "    return a.strip().lower() == b.strip().lower()",
     "",
@@ -1170,8 +1190,15 @@ function radioCode(): string {
     "        if tipo not in _radio_ao:",
     "            continue",
     "        dados = bytes(msg[5:])",
-    "        txt = _radio_str(dados) if tipo == 't' else ''",
-    "        blocos = tuple(f for filtro, f in _radio_ao[tipo] if filtro is None or _radio_igual(txt, filtro))",
+    "        # o que o campo do 'ao receber' compara: o numero, o nome ou o texto",
+    "        if tipo == 'n':",
+    "            chave = _radio_num(dados)",
+    "        elif tipo == 'v':",
+    "            chave = _radio_str(dados[:dados.find(b'\\x00')])",
+    "        else:",
+    "            chave = _radio_str(dados)",
+    "        blocos = tuple(f for filtro, f in _radio_ao[tipo] if filtro is None or",
+    "                       (chave == filtro if tipo == 'n' else _radio_igual(chave, filtro)))",
     "        if not blocos:",
     "            _radio_tratar(tipo, dados, ())  # nenhum 'ao receber': so guarda para os blocos 'recebido'",
     "            continue",
