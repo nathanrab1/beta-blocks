@@ -93,14 +93,62 @@ function currentPin(): number {
 Blockly.setLocale(ptBr as unknown as Record<string, string>);
 defineBlocks();
 
+// celular (tela estreita): menu ☰, painel embaixo e blocos menores
+const compacto = window.matchMedia("(max-width: 600px)");
+const escala = () => (compacto.matches ? 0.65 : 0.9);
+
 const workspace = Blockly.inject("blockly-div", {
   toolbox,
   renderer: "zelos",
   grid: { spacing: 24, length: 3, colour: "#e3e6eb", snap: true },
-  zoom: { controls: true, wheel: true, startScale: 0.9 },
+  zoom: { controls: true, wheel: true, startScale: escala() },
   trashcan: true,
   move: { scrollbars: true, drag: true, wheel: false },
 });
+
+// ---------- celular: menu ☰ e painel embaixo ----------
+{
+  const toolbarEl = $("toolbar");
+  const menuPanel = $("menu-panel");
+  const btnMenu = $<HTMLButtonElement>("btn-menu");
+  const sidePanel = document.querySelector<HTMLElement>(".side-panel")!;
+  const NO_TOPO = new Set(["btn-connect-ble", "btn-upload", "btn-stop"]);
+  const itens = [...toolbarEl.children] as HTMLElement[];
+
+  const abrirMenu = (abrir: boolean) => {
+    menuPanel.hidden = !abrir;
+    btnMenu.setAttribute("aria-expanded", String(abrir));
+  };
+  // os botões mudam de lugar (mesmos elementos: os cliques continuam funcionando)
+  const aplicar = () => {
+    if (compacto.matches) {
+      toolbarEl.replaceChildren(...itens.filter((el) => NO_TOPO.has(el.id)));
+      menuPanel.replaceChildren(...itens.filter((el) => !NO_TOPO.has(el.id)));
+    } else {
+      toolbarEl.replaceChildren(...itens);
+      abrirMenu(false);
+    }
+  };
+  aplicar();
+  compacto.addEventListener("change", () => {
+    aplicar();
+    workspace.setScale(escala());
+  });
+
+  btnMenu.addEventListener("click", () => abrirMenu(menuPanel.hidden));
+  // escolheu uma opção ou tocou fora: fecha
+  menuPanel.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).closest(".btn")) abrirMenu(false);
+  });
+  document.addEventListener("pointerdown", (e) => {
+    const alvo = e.target as Node;
+    if (!menuPanel.hidden && !menuPanel.contains(alvo) && !btnMenu.contains(alvo)) abrirMenu(false);
+  });
+
+  $("panel-toggle").addEventListener("click", () => sidePanel.classList.toggle("aberto"));
+  // o painel embaixo abre, fecha e aparece sem a janela mudar de tamanho: o Blockly precisa saber
+  new ResizeObserver(() => Blockly.svgResize(workspace)).observe($("blockly-div"));
+}
 
 // Sem navegação por teclado entre blocos: as setas ficam livres para os jogos
 // e para os blocos "quando apertar a tecla". Ficam só copiar/colar/desfazer/apagar.

@@ -171,3 +171,46 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
 .drive-item:hover .drive-trash { opacity: 1; }
 .drive-trash:hover { border-color: var(--danger); }
 .modal-spacer { flex: 1; }
+
+/* ---------- celular (tela estreita) ---------- */
+.menu-btn, .panel-toggle { display: none; }
+
+@media (max-width: 600px) {
+  .topbar { position: relative; gap: 8px; padding: 6px 8px; }
+  .menu-btn { display: inline-block; padding: 5px 11px; font-size: 18px; line-height: 1; }
+  .brand { flex: 1; min-width: 0; gap: 6px; font-size: 16px; }
+  .brand strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brand-sub { display: none; }
+  .project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toolbar { flex-wrap: nowrap; gap: 6px; }
+  .toolbar .btn { padding: 6px 12px; font-size: 16px; white-space: nowrap; }
+  .toolbar .btn-label { display: none; } /* no topo só o ícone: ᛒ ▶ ■ */
+
+  .menu-panel {
+    position: absolute; top: calc(100% + 4px); left: 8px; z-index: 200; /* acima das categorias do Blockly (70) */
+    display: flex; flex-direction: column; gap: 6px; min-width: 230px; padding: 10px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  }
+  .menu-panel .btn { width: 100%; text-align: left; }
+  .menu-panel .toolbar-sep { width: auto; height: 1px; margin: 2px 0; }
+
+  /* painel das entradas e do visor: embaixo dos blocos, recolhido (some sozinho quando não tem nada) */
+  .workspace-area { flex-direction: column; }
+  .side-panel { width: auto; max-height: 45vh; overflow: auto; border-left: none; border-top: 1px solid var(--border); }
+  .panel-toggle {
+    display: block; width: 100%; padding: 8px 12px; border: none; background: #fafbfc;
+    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); text-align: left; cursor: pointer;
+  }
+  .panel-toggle::after { content: " ▴"; }
+  .side-panel.aberto .panel-toggle::after { content: " ▾"; }
+  .side-panel:not(.aberto) > :not(.panel-toggle) { display: none; }
+
+  /* categorias mais estreitas (continuam fáceis de tocar) */
+  .blocklyToolboxCategory { height: 30px; line-height: 30px; padding-right: 4px; margin-bottom: 1px; }
+  .blocklyToolboxCategoryLabel { font-size: 13px; }
+  .blocklyToolboxCategoryIcon { display: none; }
+
+  .statusbar { padding: 4px 8px; font-size: 11.5px; }
+}

@@ -29,6 +29,9 @@
   </head>
   <body>
     <header class="topbar">
+      <!-- celular: os botões que não cabem no topo vão para este menu (main.ts) -->
+      <button id="btn-menu" class="btn menu-btn" aria-label="Menu" aria-expanded="false">☰</button>
+      <div id="menu-panel" class="menu-panel" hidden></div>
       <div class="brand">
         <span class="brand-dot"></span>
         <strong>Beta Blocks</strong>
@@ -36,7 +39,7 @@
         <span id="project-name" class="project-name"></span>
       </div>
 
-      <div class="toolbar">
+      <div id="toolbar" class="toolbar">
         <button id="btn-drive-connect" class="btn btn-ghost drive-only" title="Entra com a sua conta Google para salvar os projetos no Drive">☁ Conectar Drive</button>
         <button id="btn-drive-save" class="btn btn-ghost drive-only" title="Salva na pasta Beta Kit do seu Google Drive">☁ Salvar no Drive</button>
         <button id="btn-drive-open" class="btn btn-ghost drive-only" title="Abre um projeto da pasta Beta Kit do seu Google Drive">☁ Meus projetos</button>
@@ -46,9 +49,9 @@
         <input id="file-load" type="file" accept=".json,application/json" hidden />
         <span class="toolbar-sep"></span>
         <button id="btn-connect" class="btn">Conectar</button>
-        <button id="btn-connect-ble" class="btn" title="Conecta sem cabo, pelo Bluetooth" hidden>ᛒ Bluetooth</button>
-        <button id="btn-upload" class="btn btn-primary" disabled>▶ Enviar</button>
-        <button id="btn-stop" class="btn" disabled>■ Parar</button>
+        <button id="btn-connect-ble" class="btn" title="Conecta sem cabo, pelo Bluetooth" aria-label="Bluetooth" hidden>ᛒ<span class="btn-label"> Bluetooth</span></button>
+        <button id="btn-upload" class="btn btn-primary" aria-label="Enviar" disabled>▶<span class="btn-label"> Enviar</span></button>
+        <button id="btn-stop" class="btn" aria-label="Parar" disabled>■<span class="btn-label"> Parar</span></button>
         <button id="btn-flash" class="btn btn-ghost" disabled>Gravar MicroPython</button>
         <a class="btn btn-ghost" href="./controle.html" target="_blank" title="Abra este endereço no celular para controlar a placa por Bluetooth">📱 Controle no celular</a>
       </div>
@@ -58,6 +61,8 @@
       <div id="blockly-div"></div>
 
       <aside class="side-panel">
+        <!-- celular: o painel fica embaixo dos blocos, recolhido; esta barra abre e fecha -->
+        <button id="panel-toggle" class="panel-toggle">Entradas e visor</button>
         <section id="monitor-panel" class="monitor" hidden>
           <h3>Entradas ao vivo <span id="monitor-rate" class="monitor-rate"></span></h3>
           <div id="monitor-cards" class="monitor-cards"></div>
