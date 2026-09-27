@@ -5,6 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#2f80ed" />
     <title>Controle Beta Blocks</title>
+    <script>
+      // Depois de publicar uma versão nova, o navegador pode usar a página guardada (até 10 min
+      // no GitHub Pages), que aponta para scripts que o deploy apagou: nada funcionaria.
+      // Recarrega uma vez — o recarregar busca a página nova.
+      addEventListener(
+        "error",
+        (e) => {
+          const el = e.target;
+          if (!(el instanceof HTMLScriptElement || el instanceof HTMLLinkElement)) return;
+          try {
+            const antes = Number(sessionStorage.getItem("bb-recarregou") || 0);
+            if (Date.now() - antes < 30000) return; // já tentou agora há pouco: não fica em loop
+            sessionStorage.setItem("bb-recarregou", String(Date.now()));
+          } catch {
+            return;
+          }
+          location.reload();
+        },
+        true,
+      );
+    </script>
     <style>
       :root {
         --bg: #f4f5f7;
