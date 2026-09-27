@@ -686,11 +686,11 @@ updateMonitorPanelVisibility();
 // ---------- placa ----------
 const board = new Board();
 board.onData = handleSerialData;
-board.onDisconnect = () => {
+board.onDisconnect = (busy) => {
   monitorMode = null;
   clearMonitorCards();
   clearDisplayPreview();
-  setStatus("Placa desconectada", "error");
+  setStatus(busy ? "Placa desconectada: outro aparelho conectou nela por Bluetooth" : "Placa desconectada", "error");
   refreshButtons();
 };
 // Bluetooth: a placa reinicia depois de cada envio e a ligação cai por uns segundos
@@ -795,6 +795,11 @@ async function disconnect() {
   clearDisplayPreview();
   setStatus("Desconectado");
 }
+
+// fechar ou sair da página solta a placa (senão o Bluetooth pode ficar preso a este aparelho)
+window.addEventListener("pagehide", () => {
+  if (board.transport === "ble") void board.disconnect();
+});
 
 btnConnect.addEventListener("click", () =>
   run("Conexão", () => (board.connected ? disconnect() : connect())),

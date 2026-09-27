@@ -62,7 +62,7 @@ Funciona no Chrome e Edge (Windows, macOS, ChromeOS) e no Chrome do Android. No 
 
 A página `controle.html` (link **📱 Controle no celular** no app) conecta na placa e mostra um botão para cada tecla que o programa rodando usa — direcional ▲▼◀▶ para as setas, e um botão para as outras teclas — além das entradas ao vivo. Tocar no botão é o mesmo que apertar a tecla no computador. A lista vem da própria placa (comando `L`), então os botões acompanham o programa enviado; nos jogos aparecem quando o jogo começa.
 
-A placa aceita um aparelho por vez: desconecte o computador antes de conectar o celular.
+A placa fica com um aparelho por vez, e quem conecta por último fica com ela: conectar o celular tira a placa do computador e vice-versa (o aparelho que perdeu a placa avisa e não tenta tomá-la de volta). Assim, um celular que saiu da página sem desconectar não prende a placa.
 
 ### Se travar em "ler os serviços"
 

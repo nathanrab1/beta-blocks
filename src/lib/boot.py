@@ -48,6 +48,10 @@ def _limpar():
 # "<id> <letra><resto>\n", e a placa responde gravando "<id> <resposta>" no
 # valor do TX, que o app le (sem notificacoes):
 #   ?        -> "ok mtu=N"  (o app escreve em pedacos que cabem no pacote)
+#               A ultima ligacao manda: "?" derruba as outras (ex.: o celular que
+#               saiu da pagina sem soltar a placa). "?r" e o app reconectando
+#               sozinho: se outro aparelho ja esta ligado, responde "ocupada" e
+#               o app desiste, em vez de tomar a placa de volta.
 #   P        -> "parado"    (para o programa e zera LED, visor e portas)
 #   K<nome>  -> tecla do computador ou do celular (sem resposta)
 #   L        -> lista JSON das teclas que o programa rodando usa (botoes da
@@ -153,11 +157,12 @@ def _ble_processar(ble):
 class _BleComandos:
     def __init__(self, nome):
         self._nome = nome.encode()
-        self._mtu = 23
-        self._fila = []  # escritas do app, na ordem (None = ligacao nova)
+        self._conns = {}  # ligacoes abertas: conn -> tamanho do pacote (mtu)
+        self._fila = []  # escritas do app, na ordem: (conn, bytes); bytes None = ligacao nova
         self._agendado = False
-        self._buf = b''
+        self._bufs = {}  # conn -> bytes ainda sem fim de linha
         self._carga = None  # envio (U): pedacos recebidos
+        self._carga_conn = None
         self._falta = 0
         self._id = b''
         b = self._ble = bluetooth.BLE()
@@ -176,28 +181,38 @@ class _BleComandos:
         self._anunciar()
 
     def _anunciar(self):
-        # nome no anuncio (aparece na lista do Chrome) e o servico na resposta ao scan
+        # nome no anuncio (aparece na lista do Chrome) e o servico na resposta ao scan.
+        # Continua anunciando mesmo com uma ligacao aberta: outro aparelho pode tomar a placa.
         adv = b'\x02\x01\x06' + bytes((len(self._nome) + 1, 0x09)) + self._nome
         resp = b'\x11\x07' + bytes(_BLE_NUS)
-        self._ble.gap_advertise(100000, adv_data=adv, resp_data=resp)
+        try:
+            self._ble.gap_advertise(100000, adv_data=adv, resp_data=resp)
+        except Exception:
+            pass  # sem vaga para mais uma ligacao: volta a anunciar quando uma fechar
 
     def _irq(self, ev, dados):
         try:
             if ev == 3:  # app escreveu
                 if dados[1] == self._rx:
-                    self._fila.append(self._ble.gatts_read(self._rx))
+                    self._fila.append((dados[0], self._ble.gatts_read(self._rx)))
                     self._agendar()
             elif ev == 4:  # app vai ler a resposta: se o agendamento falhou, tenta de novo
                 if self._fila:
                     self._agendar()
             elif ev == 1:  # app conectou
-                self._mtu = 23
-                self._fila.append(None)
+                self._conns[dados[0]] = 23
+                self._fila.append((dados[0], None))
                 self._agendar()
-            elif ev == 2:  # app desconectou: volta a anunciar
+                self._anunciar()
+            elif ev == 2:  # app desconectou
+                self._conns.pop(dados[0], None)
+                self._bufs.pop(dados[0], None)
+                if self._carga_conn == dados[0]:
+                    self._carga = None
                 self._anunciar()
             elif ev == 21:  # tamanho do pacote combinado com o app
-                self._mtu = dados[1]
+                if dados[0] in self._conns:
+                    self._conns[dados[0]] = dados[1]
         except Exception:
             pass
 
@@ -216,34 +231,45 @@ class _BleComandos:
     def _processar(self):
         f = self._fila
         while f:
-            d = f.pop(0)
+            conn, d = f.pop(0)
             if d is None:  # ligacao nova: comeca do zero
-                self._buf = b''
-                self._carga = None
+                self._bufs[conn] = b''
                 continue
-            self._buf += d
-            while self._buf:
-                if self._carga is not None:
-                    n = min(self._falta, len(self._buf))
-                    self._carga.append(self._buf[:n])
-                    self._buf = self._buf[n:]
+            if conn not in self._conns:  # escrita de uma ligacao que ja caiu
+                continue
+            buf = self._bufs.get(conn, b'') + d
+            while buf:
+                if self._carga is not None and self._carga_conn == conn:
+                    n = min(self._falta, len(buf))
+                    self._carga.append(buf[:n])
+                    buf = buf[n:]
                     self._falta -= n
                     if not self._falta:
                         self._gravar()
                     continue
-                i = self._buf.find(b'\n')
+                i = buf.find(b'\n')
                 if i < 0:
                     break
-                linha = self._buf[:i]
-                self._buf = self._buf[i + 1:]
-                self._comando(linha)
+                linha = buf[:i]
+                buf = buf[i + 1:]
+                self._comando(conn, linha)
+            self._bufs[conn] = buf
 
-    def _comando(self, linha):
+    def _comando(self, conn, linha):
         id_, _, cmd = linha.partition(b' ')
         k, arg = cmd[:1], cmd[1:]
         try:
             if k == b'?':
-                self._responder(id_, 'ok mtu=%d' % self._mtu)
+                outras = [c for c in self._conns if c != conn]
+                if arg == b'r' and outras:
+                    self._responder(id_, 'ocupada')  # o app desiste e solta esta ligacao
+                    return
+                for c in outras:  # a ultima ligacao manda
+                    try:
+                        self._ble.gap_disconnect(c)
+                    except Exception:
+                        pass
+                self._responder(id_, 'ok mtu=%d' % self._conns.get(conn, 23))
             elif k == b'P':
                 _ble_parar()
                 self._responder(id_, 'parado')
@@ -257,6 +283,7 @@ class _BleComandos:
                 self._id = id_
                 self._falta = int(arg)
                 self._carga = []
+                self._carga_conn = conn
                 if not self._falta:
                     self._gravar()
         except Exception as e:

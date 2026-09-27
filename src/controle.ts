@@ -43,6 +43,11 @@ function setStatus(text: string, kind: "" | "ok" | "error" = "") {
 function showConnected(on: boolean) {
   btnConnect.hidden = on;
   btnDisconnect.hidden = !on;
+  showControls(on);
+}
+
+/** Botões e entradas só aparecem com a ligação de pé (somem enquanto ela tenta voltar). */
+function showControls(on: boolean) {
   controls.hidden = !on;
   if (!on) {
     monitor.hidden = true;
@@ -57,7 +62,7 @@ function keyButton(name: string, text: string): HTMLButtonElement {
     e.preventDefault();
     b.classList.add("on");
     navigator.vibrate?.(10);
-    link?.command(`K${name}`).catch(() => setStatus("A tecla não chegou à placa.", "error"));
+    link?.key(name).catch(() => setStatus("A tecla não chegou à placa.", "error"));
   });
   for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
     b.addEventListener(ev, () => b.classList.remove("on"));
@@ -136,14 +141,23 @@ async function connect() {
   const device = await requestBleDevice();
   const nome = device.name ?? "placa";
   const l = new BleLink(device);
-  l.onReconnecting = () => setStatus(`Reconectando a ${nome}…`);
-  l.onReconnected = () => setStatus(`Conectado a ${nome}`, "ok");
-  l.onLost = () => {
+  l.onReconnecting = () => {
+    if (link !== l) return;
+    showControls(false);
+    setStatus(`${nome} desconectou. Tentando reconectar… (para desistir, toque em Desconectar)`, "error");
+  };
+  l.onReconnected = () => {
+    if (link !== l) return;
+    showControls(true);
+    setStatus(`Conectado a ${nome}`, "ok");
+    refreshKeys(l).catch(() => {}); // a placa pode ter voltado com outro programa
+  };
+  l.onLost = (busy) => {
     void l.close();
     if (link !== l) return;
     link = null;
     showConnected(false);
-    setStatus(`${nome} sumiu. Está ligada e perto?`, "error");
+    setStatus(busy ? `${nome} foi conectada em outro aparelho.` : `${nome} sumiu. Está ligada e perto?`, "error");
   };
   // a placa às vezes derruba a ligação logo depois de aceitar: tenta de novo
   let tentativa = 1;
@@ -196,3 +210,17 @@ btnConnect.addEventListener("click", async () => {
 });
 
 btnDisconnect.addEventListener("click", () => void disconnect());
+
+// fechar ou sair da página solta a placa: senão o celular pode segurar a ligação
+// e o computador não acha a placa até desligar o Bluetooth do celular
+window.addEventListener("pagehide", () => {
+  const l = link;
+  link = null;
+  void l?.close();
+});
+window.addEventListener("pageshow", (e) => {
+  if (e.persisted) {
+    showConnected(false);
+    setStatus("Toque em Conectar para usar a placa de novo.");
+  }
+});

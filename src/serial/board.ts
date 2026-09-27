@@ -18,7 +18,8 @@ export class Board {
   port: SerialPort | null = null;
   ble: BleLink | null = null;
   onData: ((text: string) => void) | null = null;
-  onDisconnect: (() => void) | null = null;
+  /** `busy`: pelo Bluetooth, outro aparelho conectou na placa e ficou com ela. */
+  onDisconnect: ((busy?: boolean) => void) | null = null;
   /** Só no Bluetooth: a ligação caiu e está voltando (ex.: soft reset depois do envio). */
   onReconnecting: (() => void) | null = null;
   onReconnected: (() => void) | null = null;
@@ -56,11 +57,11 @@ export class Board {
     // só a ligação atual fala com o app (uma antiga que desistiu fica muda)
     link.onReconnecting = () => { if (this.ble === link) this.onReconnecting?.(); };
     link.onReconnected = () => { if (this.ble === link) this.onReconnected?.(); };
-    link.onLost = () => {
+    link.onLost = (busy) => {
       void link.close();
       if (this.ble !== link) return;
       this.ble = null;
-      this.onDisconnect?.();
+      this.onDisconnect?.(busy);
     };
     // a placa às vezes derruba a ligação logo depois de aceitar: tenta de novo
     let tentativa = 1;
@@ -238,7 +239,7 @@ export class Board {
   /** Tecla do computador para o programa rodando. */
   async sendEvent(name: string): Promise<void> {
     if (this.ble) {
-      await this.ble.command(`K${name}`);
+      await this.ble.key(name);
       return;
     }
     await this.write(`${KEY_MARK}${name}\n`);
