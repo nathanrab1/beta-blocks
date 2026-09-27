@@ -169,14 +169,59 @@ function saveWorkspace() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+type BlockState = { type?: string; next?: { block?: BlockState }; inputs?: Record<string, { block?: BlockState }> };
+
+/**
+ * Tira do projeto os blocos que não existem mais (ex.: os de Wi-Fi, removidos):
+ * o Blockly daria erro ao abrir e o app inteiro pararia. Os blocos que vinham
+ * depois dele continuam no lugar. Devolve quantos foram tirados.
+ */
+function dropUnknownBlocks(state: any): number {
+  let removed = 0;
+  // devolve o bloco a usar no lugar deste (o próprio, o seguinte dele, ou nenhum)
+  const clean = (b: BlockState | undefined): BlockState | undefined => {
+    while (b && !(b.type && Blockly.Blocks[b.type])) {
+      removed++;
+      b = b.next?.block;
+    }
+    if (!b) return undefined;
+    for (const input of Object.values(b.inputs ?? {})) {
+      if (input.block) input.block = clean(input.block);
+      if (!input.block) delete input.block;
+    }
+    if (b.next?.block) b.next.block = clean(b.next.block);
+    if (b.next && !b.next.block) delete b.next;
+    return b;
+  };
+  if (!Array.isArray(state?.blocks?.blocks)) return 0;
+  state.blocks.blocks = state.blocks.blocks.flatMap((top: BlockState & { x?: number; y?: number }) => {
+    const b = clean(top);
+    if (!b) return [];
+    // o seguinte de um bloco solto que saiu fica onde ele estava
+    if (b !== top) Object.assign(b, { x: top.x, y: top.y });
+    return [b];
+  });
+  return removed;
+}
+
 function loadWorkspace() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  let state: object = starterWorkspace;
+  let state: any = starterWorkspace;
   if (saved) {
     try { state = JSON.parse(saved); } catch { /* usa o inicial */ }
   }
-  Blockly.serialization.workspaces.load(state, workspace);
+  let removed = 0;
+  try {
+    removed = dropUnknownBlocks(state);
+    Blockly.serialization.workspaces.load(state, workspace);
+  } catch (err) {
+    // projeto salvo que não abre: começa do inicial em vez de travar o app
+    console.error("Projeto salvo não abriu:", err);
+    workspace.clear();
+    Blockly.serialization.workspaces.load(starterWorkspace, workspace);
+  }
   ensureStartBlock();
+  if (removed) setStatus(`${removed} bloco(s) que não existem mais (ex.: Wi-Fi) foram tirados do projeto`, "error");
 }
 
 /**
@@ -255,8 +300,10 @@ function openProject(data: any): boolean {
   Blockly.Events.setGroup(true);
   try {
     workspace.clear();
+    const removed = dropUnknownBlocks(state);
     Blockly.serialization.workspaces.load(state, workspace);
     ensureStartBlock();
+    if (removed) setStatus(`${removed} bloco(s) que não existem mais (ex.: Wi-Fi) foram tirados do projeto`, "error");
   } finally {
     Blockly.Events.setGroup(false);
   }
