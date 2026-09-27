@@ -59,6 +59,7 @@ body {
 }
 .btn:hover:not(:disabled) { background: #f0f2f5; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover:not(:disabled) { background: var(--accent-dark); }
 .btn-ghost { color: var(--muted); }

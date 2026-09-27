@@ -42,6 +42,7 @@ src/main.ts                Blockly, botões, fluxo de conexão/envio/gravação
 src/blocks/betablocks.ts   blocos customizados, geradores Python, toolbox
 src/serial/board.ts        cliente raw-REPL do MicroPython (cabo) e comandos pelo Bluetooth
 src/serial/ble.ts          canal Bluetooth (Web Bluetooth, serviço UART da Nordic)
+src/controle.ts            página de controle do celular (controle.html)
 src/serial/flasher.ts      gravação do firmware com esptool-js
 public/firmware/           MicroPython v1.29.0 (ESP32_GENERIC_S3)
 ```
@@ -55,7 +56,13 @@ Sem cabo: o computador (ou celular Android) fala direto com a placa por BLE. Env
 
 Depois de cada envio a placa reinicia e a ligação cai por 1–2 s; o app reconecta sozinho. Cada placa aceita um computador por vez.
 
-Funciona no Chrome e Edge (Windows, macOS, ChromeOS) e no Chrome do Android. Não funciona no iPhone/iPad. No macOS, confira Ajustes → Privacidade e Segurança → Bluetooth → Google Chrome ligado.
+Funciona no Chrome e Edge (Windows, macOS, ChromeOS) e no Chrome do Android. No iPhone/iPad, só pelo app gratuito **Bluefy** (os outros navegadores do iPhone não têm Bluetooth para páginas). No macOS, confira Ajustes → Privacidade e Segurança → Bluetooth → Google Chrome ligado.
+
+### Controle pelo celular
+
+A página `controle.html` (link **📱 Controle no celular** no app) conecta na placa e mostra um botão para cada tecla que o programa rodando usa — direcional ▲▼◀▶ para as setas, e um botão para as outras teclas — além das entradas ao vivo. Tocar no botão é o mesmo que apertar a tecla no computador. A lista vem da própria placa (comando `L`), então os botões acompanham o programa enviado; nos jogos aparecem quando o jogo começa.
+
+A placa aceita um aparelho por vez: desconecte o computador antes de conectar o celular.
 
 ### Se travar em "ler os serviços"
 

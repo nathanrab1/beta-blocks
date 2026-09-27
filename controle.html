@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#2f80ed" />
+    <title>Controle Beta Blocks</title>
+    <style>
+      :root {
+        --bg: #f4f5f7;
+        --panel: #ffffff;
+        --border: #dfe2e8;
+        --text: #1f2430;
+        --muted: #6b7280;
+        --accent: #2f80ed;
+        --accent-dark: #1f6dd6;
+        --danger: #e04b4b;
+        --ok: #27ae60;
+        --pad: #444a57;
+        --pad-dark: #262a33;
+      }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      html, body { margin: 0; background: var(--bg); color: var(--text); }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        padding: 16px;
+        max-width: 480px;
+        margin: 0 auto;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        touch-action: manipulation;
+      }
+      header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+      .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+      h1 { font-size: 18px; margin: 0; }
+      h1 span { color: var(--muted); font-weight: 400; }
+      .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+      .status { font-size: 14px; color: var(--muted); margin: 0 0 10px; line-height: 1.4; }
+      .status.ok { color: var(--ok); }
+      .status.error { color: var(--danger); }
+      button { font: inherit; border: 0; cursor: pointer; }
+      .btn { width: 100%; font-size: 17px; font-weight: 600; padding: 14px; border-radius: 10px; background: var(--accent); color: #fff; }
+      .btn:active { background: var(--accent-dark); }
+      .btn.secondary { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 500; }
+      .pad { display: grid; grid-template-columns: repeat(3, 84px); grid-template-rows: repeat(2, 84px); gap: 10px; justify-content: center; margin: 4px 0 12px; }
+      .pad button { background: var(--pad); color: #fff; font-size: 34px; border-radius: 16px; }
+      .pad button:active, .pad button.on { background: var(--pad-dark); }
+      .keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+      .keys button { background: var(--ok); color: #fff; font-size: 22px; font-weight: 600; padding: 20px 8px; border-radius: 14px; }
+      .keys button:active, .keys button.on { background: #1e8449; }
+      .keys button.wide { grid-column: 1 / -1; }
+      .empty { font-size: 14px; color: var(--muted); line-height: 1.5; margin: 0; }
+      h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 10px; }
+      .readings { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+      .reading { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+      .reading small { display: block; font-size: 12px; color: var(--muted); }
+      .reading b { font-size: 22px; font-variant-numeric: tabular-nums; }
+      .help { font-size: 13px; color: var(--muted); line-height: 1.5; }
+      .help a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="dot"></span>
+      <h1>Beta Blocks <span>· controle</span></h1>
+    </header>
+
+    <section class="card">
+      <p id="status" class="status">Ligue a placa e toque em Conectar.</p>
+      <button id="btn-connect" class="btn">ᛒ Conectar</button>
+      <button id="btn-disconnect" class="btn secondary" hidden>Desconectar</button>
+    </section>
+
+    <section id="unsupported" class="card" hidden>
+      <p class="help">
+        Este navegador não tem Bluetooth para páginas.<br />
+        <b>Android:</b> abra esta página no Chrome.<br />
+        <b>iPhone/iPad:</b> instale o app gratuito <b>Bluefy</b> e abra esta página por ele.
+      </p>
+    </section>
+
+    <section id="controls" class="card" hidden>
+      <div id="pad" class="pad" hidden></div>
+      <div id="keys" class="keys"></div>
+      <p id="no-keys" class="empty" hidden>
+        O programa da placa não usa teclas. No computador, use o bloco “quando apertar a tecla” (ou um jogo) e
+        envie o programa de novo.
+      </p>
+    </section>
+
+    <section id="monitor" class="card" hidden>
+      <h2>Entradas</h2>
+      <div id="readings" class="readings"></div>
+    </section>
+
+    <p class="help">
+      A placa aceita um aparelho por vez: desconecte o computador antes de conectar o celular.
+    </p>
+
+    <script type="module" src="./src/controle.ts"></script>
+  </body>
+</html>

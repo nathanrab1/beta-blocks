@@ -49,7 +49,9 @@ def _limpar():
 # valor do TX, que o app le (sem notificacoes):
 #   ?        -> "ok mtu=N"  (o app escreve em pedacos que cabem no pacote)
 #   P        -> "parado"    (para o programa e zera LED, visor e portas)
-#   K<nome>  -> tecla do computador (sem resposta)
+#   K<nome>  -> tecla do computador ou do celular (sem resposta)
+#   L        -> lista JSON das teclas que o programa rodando usa (botoes da
+#               pagina de controle do celular)
 #   U<n>     -> seguido de n bytes de JSON {arquivo: conteudo}: grava,
 #               responde "gravado" e reinicia
 # Monitor de entradas: o programa chama _ble_mon com a leitura (o mesmo JSON que
@@ -168,7 +170,7 @@ class _BleComandos:
             ((_BLE_NUS, ((_BLE_TX, 0x0002 | 0x0010), (_BLE_RX, 0x0008 | 0x0004),
                          (_BLE_MON, 0x0002))),))  # read, notify; write; read
         b.gatts_set_buffer(self._rx, 512, True)
-        b.gatts_set_buffer(self._tx, 128)
+        b.gatts_set_buffer(self._tx, 512)  # a lista de teclas pode ser longa
         b.gatts_set_buffer(self._mon, 256)
         b.irq(self._irq)
         self._anunciar()
@@ -245,6 +247,8 @@ class _BleComandos:
             elif k == b'P':
                 _ble_parar()
                 self._responder(id_, 'parado')
+            elif k == b'L':
+                self._responder(id_, json.dumps(sorted(globals().get('_teclas', {}))))
             elif k == b'K':
                 f = globals().get('_teclas', {}).get(arg.decode())
                 if f:
