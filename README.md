@@ -40,23 +40,28 @@ O pino do LED WS2812 é selecionável no topo (GPIO 21 na S3-Zero; 48 ou 38 no D
 index.html                 layout da página
 src/main.ts                Blockly, botões, fluxo de conexão/envio/gravação
 src/blocks/betablocks.ts   blocos customizados, geradores Python, toolbox
-src/serial/board.ts        cliente raw-REPL do MicroPython (Web Serial)
+src/serial/board.ts        cliente raw-REPL do MicroPython (cabo) e comandos pelo Bluetooth
+src/serial/ble.ts          canal Bluetooth (Web Bluetooth, serviço UART da Nordic)
 src/serial/flasher.ts      gravação do firmware com esptool-js
 public/firmware/           MicroPython v1.29.0 (ESP32_GENERIC_S3)
 ```
 
-## Envio por Wi-Fi
+## Conexão por Bluetooth
 
-1. Uma vez pelo cabo: enviar um programa com o bloco `conectar no Wi-Fi`. Isso instala o `boot.py` (receptor na porta 8266) e salva a rede na placa (`wifi.json`).
-2. Depois, com a placa em qualquer fonte: **📶 Enviar por Wi-Fi** → confirmar o IP → a placa grava e reinicia.
+Sem cabo: o computador (ou celular Android) fala direto com a placa por BLE. Enviar, parar e teclas funcionam igual ao cabo. O monitor de entradas também aparece (algumas leituras por segundo, com o programa rodando). O console e o visor ao vivo só aparecem pelo cabo.
 
-No GitHub Pages (HTTPS) o Chrome pede permissão de "acesso à rede local" na primeira vez — é preciso permitir. Se o navegador não perguntar nem deixar, use o app local (`npm run dev`).
+1. Uma vez pelo cabo: enviar qualquer programa. Isso instala o `boot.py`, que liga o Bluetooth sempre que a placa liga.
+2. Depois, com a placa em qualquer fonte: **ᛒ Bluetooth** → escolher a placa na lista (`Beta-XXXX`; o nome aparece no console ao ligar a placa pelo cabo).
 
-### Se der "Failed to fetch" no Chrome
+Depois de cada envio a placa reinicia e a ligação cai por 1–2 s; o app reconecta sozinho. Cada placa aceita um computador por vez.
 
-O Chrome tem uma permissão própria de acesso à rede local. Em `chrome://settings/content/localNetworkAccess`, permitir que sites peçam acesso e remover `localhost:5173` de "Not allowed"; depois fechar o Chrome (Cmd+Q) e abrir de novo. No macOS, confira também Ajustes → Privacidade e Segurança → Rede Local → Google Chrome ligado.
+Funciona no Chrome e Edge (Windows, macOS, ChromeOS) e no Chrome do Android. Não funciona no iPhone/iPad. No macOS, confira Ajustes → Privacidade e Segurança → Bluetooth → Google Chrome ligado.
 
-Teste rápido de que a placa está na rede: abrir `http://<ip>:8266/ping` (deve mostrar `betablocks`) — no celular ou no Safari.
+### Se travar em "ler os serviços"
+
+A placa conecta mas o Chrome não termina de abrir a ligação — costuma ser estado preso no Mac depois de tentativas que falharam. Fechar o Chrome (Cmd+Q), desligar e ligar o Bluetooth do Mac e tentar de novo. Para saber se o problema é da placa: o app **nRF Connect** (celular) deve conectar e mostrar o "Nordic UART Service" — e precisa ser desconectado depois, porque a placa aceita um aparelho por vez.
+
+Por dentro: serviço "UART" da Nordic (NUS) com um protocolo curto próprio — o app escreve `<id> <comando>` e lê a resposta no valor da característica TX (`src/lib/boot.py`, `src/serial/ble.ts`). Não passa a REPL pelo Bluetooth: com o terminal no BLE, cada linha impressa virava uma notificação chamada segurando o GIL, e a placa congelava inteira.
 
 ## Projetos no Google Drive
 

@@ -1,6 +1,11 @@
 /**
- * Comunicação com o MicroPython via Web Serial (REPL).
+ * Comunicação com o MicroPython: pela REPL no cabo (Web Serial), ou por
+ * comandos curtos no Bluetooth (BLE, ver ble.ts e boot.py). O Bluetooth só
+ * faz enviar, parar e teclas; o resto (monitor, visor, gravar) é pelo cabo.
  */
+
+import { BleLink, BleDropped } from "./ble";
+import { KEY_MARK } from "../blocks/betablocks";
 
 const RAW_REPL_PROMPT = "raw REPL; CTRL-B to exit\r\n>";
 const CHUNK_SIZE = 256;
@@ -11,8 +16,12 @@ export class ReplError extends Error {}
 
 export class Board {
   port: SerialPort | null = null;
+  ble: BleLink | null = null;
   onData: ((text: string) => void) | null = null;
   onDisconnect: (() => void) | null = null;
+  /** Só no Bluetooth: a ligação caiu e está voltando (ex.: soft reset depois do envio). */
+  onReconnecting: (() => void) | null = null;
+  onReconnected: (() => void) | null = null;
 
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
@@ -23,7 +32,11 @@ export class Board {
   private closing = false;
 
   get connected(): boolean {
-    return this.port !== null && this.writer !== null;
+    return (this.port !== null && this.writer !== null) || this.ble !== null;
+  }
+
+  get transport(): "usb" | "ble" | null {
+    return this.ble ? "ble" : this.connected ? "usb" : null;
   }
 
   async connect(port: SerialPort): Promise<void> {
@@ -37,7 +50,44 @@ export class Board {
     this.readLoop = this.runReadLoop();
   }
 
+  async connectBle(device: BluetoothDevice, onProgress?: (msg: string) => void): Promise<void> {
+    if (this.ble) await this.disconnect();
+    const link = new BleLink(device);
+    // só a ligação atual fala com o app (uma antiga que desistiu fica muda)
+    link.onReconnecting = () => { if (this.ble === link) this.onReconnecting?.(); };
+    link.onReconnected = () => { if (this.ble === link) this.onReconnected?.(); };
+    link.onLost = () => {
+      void link.close();
+      if (this.ble !== link) return;
+      this.ble = null;
+      this.onDisconnect?.();
+    };
+    // a placa às vezes derruba a ligação logo depois de aceitar: tenta de novo
+    let tentativa = 1;
+    link.onStep = (step) => onProgress?.(`${step} (tentativa ${tentativa} de 3)`);
+    for (; ; tentativa++) {
+      try {
+        await link.open();
+        break;
+      } catch (err) {
+        if (tentativa >= 3) {
+          await link.close();
+          throw new ReplError(`não consegui abrir a ligação — parou em "${(err as Error).message}"`);
+        }
+        await sleep(700);
+      }
+    }
+    link.onStep = null;
+    this.ble = link;
+  }
+
   async disconnect(): Promise<void> {
+    if (this.ble) {
+      const link = this.ble;
+      this.ble = null;
+      await link.close();
+      return;
+    }
     if (!this.port) return;
     this.closing = true;
     try { await this.reader?.cancel(); } catch { /* ignore */ }
@@ -56,11 +106,7 @@ export class Board {
         for (;;) {
           const { value, done } = await this.reader.read();
           if (done) break;
-          if (value) {
-            const text = this.decoder.decode(value, { stream: true });
-            this.buffer += text;
-            this.onData?.(text);
-          }
+          if (value) this.receive(value);
         }
       } catch {
         // erro de leitura (cabo desconectado etc.)
@@ -80,7 +126,14 @@ export class Board {
     }
   }
 
+  private receive(bytes: Uint8Array) {
+    const text = this.decoder.decode(bytes, { stream: true });
+    this.buffer += text;
+    this.onData?.(text);
+  }
+
   async write(text: string): Promise<void> {
+    if (this.ble) throw new ReplError("Isso só funciona pelo cabo.");
     if (!this.writer) throw new ReplError("Placa não conectada.");
     const bytes = this.encoder.encode(text);
     for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
@@ -115,6 +168,11 @@ export class Board {
    * quadros do visor) continuariam imprimindo e bagunçariam a raw REPL.
    */
   async stop(): Promise<void> {
+    if (this.ble) {
+      // a placa para o programa e zera LED, visor e portas sozinha (boot.py)
+      await this.ble.command("P", { waitMs: 8000 });
+      return;
+    }
     // Ctrl-C espaçados: um que caia dentro de um timer da placa é engolido por ele
     for (let i = 0; i < 3; i++) {
       await this.write(i === 0 ? "\r\x03" : "\x03");
@@ -152,6 +210,16 @@ export class Board {
 
   /** Grava `code` como main.py (e arquivos extras, ex.: bibliotecas) e reinicia a placa. */
   async uploadMain(code: string, extraFiles: Record<string, string> = {}): Promise<void> {
+    if (this.ble) {
+      const json = this.encoder.encode(JSON.stringify({ ...extraFiles, "main.py": code }));
+      try {
+        await this.ble.command(`U${json.length}`, { payload: json, waitMs: 20000 });
+      } catch (err) {
+        // a placa reinicia logo depois de gravar: se caiu antes de lermos o "gravado", já foi
+        if (!(err instanceof BleDropped)) throw err;
+      }
+      return;
+    }
     await this.enterRawRepl();
     for (const [name, content] of Object.entries({ ...extraFiles, "main.py": code })) {
       const literal = JSON.stringify(content); // literal JSON é um literal Python válido
@@ -160,6 +228,20 @@ export class Board {
     await this.exitRawRepl();
     await sleep(50);
     await this.write("\x04"); // soft reset -> roda main.py
+  }
+
+  /** Bluetooth: última leitura do monitor de entradas (JSON) que o programa deixou na placa. */
+  async readMonitor(): Promise<string | null> {
+    return this.ble ? this.ble.readMonitor() : null;
+  }
+
+  /** Tecla do computador para o programa rodando. */
+  async sendEvent(name: string): Promise<void> {
+    if (this.ble) {
+      await this.ble.command(`K${name}`);
+      return;
+    }
+    await this.write(`${KEY_MARK}${name}\n`);
   }
 
   /** Executa um trecho de código pela raw REPL e volta para a REPL normal. */

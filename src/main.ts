@@ -11,12 +11,9 @@ import {
   programCode,
   resetBoardCode,
   KEY_OPTIONS,
-  KEY_MARK,
   MONITOR_MARK,
   DISPLAY_MARK,
-  WIFI_MARK,
-  wifiEventNames,
-  keysOfType,
+  eventKeys,
   gameKeys,
   usesOled,
   oledCode,
@@ -25,6 +22,7 @@ import {
 import ssd1306Source from "./lib/ssd1306.py?raw";
 import bootSource from "./lib/boot.py?raw";
 import { Board, ReplError } from "./serial/board";
+import { bleSupported, requestBleDevice } from "./serial/ble";
 import { flashMicroPython, loadFirmware } from "./serial/flasher";
 import {
   DriveError,
@@ -47,8 +45,8 @@ const STORAGE_KEY = "betablocks.workspace";
 // ---------- elementos ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const btnConnect = $<HTMLButtonElement>("btn-connect");
+const btnConnectBle = $<HTMLButtonElement>("btn-connect-ble");
 const btnUpload = $<HTMLButtonElement>("btn-upload");
-const btnUploadWifi = $<HTMLButtonElement>("btn-upload-wifi");
 const btnStop = $<HTMLButtonElement>("btn-stop");
 const btnFlash = $<HTMLButtonElement>("btn-flash");
 const codeView = $<HTMLPreElement>("code-view");
@@ -145,7 +143,7 @@ Blockly.ContextMenuRegistry.registry.register({
   },
 });
 
-/** Arquivos que acompanham o main.py: boot.py (receptor Wi-Fi) e bibliotecas usadas. */
+/** Arquivos que acompanham o main.py: boot.py (Bluetooth) e bibliotecas usadas. */
 function programFiles(): Record<string, string> {
   const files: Record<string, string> = { "boot.py": bootSource };
   // o MicroPython não traz o driver do OLED
@@ -226,7 +224,6 @@ workspace.addChangeListener((e) => {
   updateCode();
   saveWorkspace();
   onInputPinsChanged();
-  updateWifiSendControl();
 });
 
 loadWorkspace();
@@ -504,73 +501,8 @@ function updateMonitorPanelVisibility() {
 
 function updateSidePanelVisibility() {
   (document.querySelector(".side-panel") as HTMLElement).hidden =
-    monitorPanel.hidden && displayPanel.hidden && wifiPanel.hidden && !PANELS_VISIBLE;
+    monitorPanel.hidden && displayPanel.hidden && !PANELS_VISIBLE;
 }
-
-// ---------- Wi-Fi ----------
-const wifiPanel = $("wifi-panel");
-const wifiInfo = $("wifi-info");
-
-const WIFI_IP_KEY = "betablocks.wifiIp";
-
-function showWifiStatus(info: { ip?: string; erro?: string }) {
-  wifiIp = info.ip ?? null;
-  if (info.ip) localStorage.setItem(WIFI_IP_KEY, info.ip);
-  if (info.ip) {
-    wifiInfo.className = "wifi-info";
-    wifiInfo.innerHTML = `Conectado. No celular (na mesma rede), abra:<span class="url">http://${info.ip}</span>`;
-  } else {
-    wifiInfo.className = "wifi-info error";
-    wifiInfo.textContent = `Wi-Fi: ${info.erro ?? "erro"}. Confira o nome da rede e a senha.`;
-  }
-  updateWifiSendControl();
-}
-
-function clearWifiStatus() {
-  wifiIp = null;
-  wifiInfo.textContent = "";
-  updateWifiSendControl();
-}
-
-// ---- enviar comando de Wi-Fi a partir do app ----
-let wifiIp: string | null = null;
-const wifiSend = $("wifi-send");
-const wifiSendName = $<HTMLSelectElement>("wifi-send-name");
-
-/** Mostra o seletor de comandos quando o programa (rodando) tem eventos de Wi-Fi. */
-function updateWifiSendControl() {
-  const names = wifiEventNames(workspace);
-  const current = wifiSendName.value;
-  wifiSendName.replaceChildren(
-    ...names.map((n) => {
-      const o = document.createElement("option");
-      o.value = o.textContent = n;
-      return o;
-    }),
-  );
-  if (names.includes(current)) wifiSendName.value = current;
-  wifiSend.hidden = !(names.length > 0 && board.connected && monitorMode === "program");
-  wifiPanel.hidden = wifiSend.hidden && !wifiInfo.textContent;
-  updateSidePanelVisibility();
-}
-
-$("btn-wifi-send").addEventListener("click", async () => {
-  const name = wifiSendName.value;
-  if (!name) return;
-  // tenta pela rede quando o IP é conhecido; se falhar (ou sem IP) vai pelo cabo USB
-  const viaWifi = wifiIp !== null;
-  if (viaWifi) {
-    try {
-      await fetchLocal(`http://${wifiIp}/b?n=${encodeURIComponent(name)}`, { mode: "no-cors" }, 3000);
-      setStatus(`"${name}" enviado pelo Wi-Fi`, "ok");
-      return;
-    } catch {
-      /* placa não respondeu pelo Wi-Fi: tenta pelo cabo */
-    }
-  }
-  await board.write(`${KEY_MARK}wifi:${name}\n`).catch(() => {});
-  setStatus(`"${name}" enviado pelo cabo USB`, "ok");
-});
 
 // ---------- preview do visor ----------
 const displayPanel = $("display-panel");
@@ -662,12 +594,12 @@ setInterval(() => {
 }, 500);
 
 let serialPending = "";
-let lastMarkAt = 0; // quando chegou a última linha de monitor/visor/Wi-Fi
+let lastMarkAt = 0; // quando chegou a última linha de monitor/visor
 /** Separa as linhas do monitor/visor (marcadas) do texto normal do console. */
 function handleSerialData(text: string) {
   serialPending += text;
   for (;;) {
-    const marks = [MONITOR_MARK, DISPLAY_MARK, WIFI_MARK]
+    const marks = [MONITOR_MARK, DISPLAY_MARK]
       .map((m) => serialPending.indexOf(m))
       .filter((i) => i >= 0);
     const mark = marks.length ? Math.min(...marks) : -1;
@@ -687,7 +619,6 @@ function handleSerialData(text: string) {
     serialPending = serialPending.slice(nl + 1);
     try {
       if (kind === MONITOR_MARK) queueMonitorValues(JSON.parse(line));
-      else if (kind === WIFI_MARK) showWifiStatus(JSON.parse(line));
       else drawDisplayFrame(line);
       lastMarkAt = Date.now(); // a placa está mandando dados: tem programa rodando
     } catch {
@@ -705,12 +636,31 @@ async function startReplMonitor() {
 /** Para o programa e zera a placa (LED, PWM, portas, visor); liga o monitor se houver entradas. */
 async function stopAndReset() {
   await board.stop();
-  await board.execSnippet(resetBoardCode(currentPin()));
+  // pelo Bluetooth a própria placa zera tudo no Parar (boot.py); o monitor com o
+  // programa parado (pela REPL) é só pelo cabo
+  if (board.transport === "ble") clearMonitorCards();
+  else await board.execSnippet(resetBoardCode(currentPin()));
   monitorMode = null;
   clearDisplayPreview();
-  clearWifiStatus();
-  if (monitoredPins.analog.length + monitoredPins.digital.length > 0) {
+  if (board.transport !== "ble" && monitoredPins.analog.length + monitoredPins.digital.length > 0) {
     await startReplMonitor();
+  }
+}
+
+const SO_CABO = "visor ao vivo só pelo cabo";
+
+/** Bluetooth: lê algumas vezes por segundo a leitura do monitor que o programa deixa na placa. */
+async function bleMonitorLoop() {
+  const link = board.ble;
+  while (link && board.ble === link) {
+    await new Promise((r) => setTimeout(r, 250));
+    if (busy || monitorMode !== "program") continue;
+    try {
+      const text = await board.readMonitor();
+      if (text && board.ble === link) queueMonitorValues(JSON.parse(text));
+    } catch {
+      /* ligação caindo ou leitura cortada: tenta na próxima */
+    }
   }
 }
 
@@ -740,20 +690,23 @@ board.onDisconnect = () => {
   monitorMode = null;
   clearMonitorCards();
   clearDisplayPreview();
-  clearWifiStatus();
   setStatus("Placa desconectada", "error");
   refreshButtons();
 };
+// Bluetooth: a placa reinicia depois de cada envio e a ligação cai por uns segundos
+board.onReconnecting = () => setStatus("Bluetooth: reconectando à placa… (para desistir, clique em Desconectar)");
+board.onReconnected = () => setStatus(`Conectado por Bluetooth (${board.ble?.name})`, "ok");
 
 const serialSupported = "serial" in navigator;
-if (!serialSupported) {
+if (!serialSupported && !bleSupported) {
   $("unsupported").hidden = false;
 }
 
 function refreshButtons() {
   const on = board.connected;
   btnConnect.textContent = on ? "Desconectar" : "Conectar";
-  btnConnect.disabled = !serialSupported;
+  btnConnect.disabled = !on && !serialSupported;
+  btnConnectBle.hidden = on || !bleSupported;
   btnUpload.disabled = !on;
   btnStop.disabled = !on;
   btnFlash.disabled = !serialSupported;
@@ -788,7 +741,29 @@ async function connect(port?: SerialPort) {
   const alvo = port ?? (await navigator.serial.requestPort());
   await board.connect(alvo);
   autoReconnect = true;
+  await afterConnect();
+}
+
+async function connectBle() {
+  const device = await requestBleDevice();
+  const nome = device.name ?? "placa";
+  setStatus(`Conectando por Bluetooth a ${nome}…`);
+  await board.connectBle(device, (msg) => setStatus(`Bluetooth ${nome}: ${msg}…`));
+  consoleWrite(`\n[bluetooth] ${device.name}: escritas em pedaços de ${board.ble?.chunkSize} bytes\n`);
+  void bleMonitorLoop();
+  await afterConnect(` por Bluetooth (${device.name ?? "placa"})`);
+}
+
+/** `via`: complemento de "Conectado" nas mensagens (ex.: " por Bluetooth"). */
+async function afterConnect(via = "") {
   refreshButtons();
+  if (board.transport === "ble") {
+    // o Bluetooth não mostra a saída da placa: não dá para saber se há programa
+    // rodando, então fica pronto para teclas, Parar e Enviar
+    monitorMode = "program";
+    setStatus(`Conectado${via} (${SO_CABO})`, "ok");
+    return;
+  }
   // o primeiro boot depois da gravação demora (formata a memória): tenta algumas vezes
   for (let tentativa = 1; tentativa <= 3; tentativa++) {
     setStatus(tentativa === 1 ? "Conectando…" : `Conectando… (tentativa ${tentativa})`);
@@ -796,12 +771,12 @@ async function connect(port?: SerialPort) {
     await new Promise((r) => setTimeout(r, 1200));
     if (lastMarkAt > t0) {
       monitorMode = "program";
-      setStatus("Conectado — mostrando o programa que já está rodando na placa", "ok");
+      setStatus(`Conectado${via} — mostrando o programa que já está rodando na placa`, "ok");
       return;
     }
     if (await board.atRepl()) {
       await stopAndReset(); // placa parada: deixa limpa (LED apagado, portas soltas)
-      setStatus("Conectado — MicroPython pronto", "ok");
+      setStatus(`Conectado${via} — MicroPython pronto`, "ok");
       return;
     }
   }
@@ -818,12 +793,25 @@ async function disconnect() {
   monitorMode = null;
   clearMonitorCards();
   clearDisplayPreview();
-  clearWifiStatus();
   setStatus("Desconectado");
 }
 
 btnConnect.addEventListener("click", () =>
   run("Conexão", () => (board.connected ? disconnect() : connect())),
+);
+btnConnectBle.addEventListener("click", () =>
+  run("Bluetooth", async () => {
+    try {
+      await connectBle();
+    } catch (err) {
+      // fechou a lista sem escolher
+      if (err instanceof DOMException && err.name === "NotFoundError") {
+        setStatus("Nenhuma placa escolhida");
+        return;
+      }
+      throw err;
+    }
+  }),
 );
 
 // Reconexão automática: ao plugar o cabo (ou ao abrir o app com a placa
@@ -865,55 +853,17 @@ btnUpload.addEventListener("click", () =>
       throw err;
     }
     monitorMode = "program";
-    updateWifiSendControl();
-    setStatus("Programa enviado e rodando!", "ok");
+    setStatus(board.transport === "ble" ? `Programa enviado e rodando! (${SO_CABO})` : "Programa enviado e rodando!", "ok");
   }),
 );
 
 btnStop.addEventListener("click", () =>
   run("Parar", async () => {
     await stopAndReset();
+    consoleWrite(`\n[parado] programa parado${board.transport === "ble" ? " (pelo Bluetooth)" : ""}\n`);
     setStatus(monitorMode === "repl" ? "Programa parado — monitor de entradas ligado" : "Programa parado", "ok");
   }),
 );
-
-// ---------- envio do programa por Wi-Fi ----------
-const OTA_PORT = 8266;
-
-async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
-  try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-/**
- * Chamada HTTP para a placa na rede local. Numa página HTTPS o navegador
- * bloqueia http://<ip> (conteúdo misto), a não ser que a chamada declare que o
- * destino é a rede local ("targetAddressSpace") — aí o Chrome pede permissão
- * de acesso à rede local ao usuário. Tenta os nomes usados pelas versões do Chrome.
- */
-async function fetchLocal(url: string, init: RequestInit, ms: number): Promise<Response> {
-  if (location.protocol !== "https:") return fetchWithTimeout(url, init, ms);
-  let lastErr: unknown;
-  for (const space of ["local", "private"]) {
-    try {
-      return await fetchWithTimeout(url, { ...init, targetAddressSpace: space } as RequestInit, ms);
-    } catch (err) {
-      lastErr = err;
-      // valor não reconhecido pelo navegador: tenta o outro nome; erro de rede: desiste
-      if (!(err instanceof TypeError && /enum|AddressSpace/i.test(err.message))) break;
-    }
-  }
-  throw lastErr;
-}
-
-const AJUDA_HTTPS =
-  "Se o Chrome perguntou sobre acesso à rede local, permita e tente de novo. " +
-  "Se não perguntou, este navegador não deixa páginas HTTPS falarem com a placa — abra o app local (npm run dev).";
 
 // ---------- teclas do computador -> placa ----------
 const KEY_NAMES: Record<string, string> = {
@@ -926,11 +876,7 @@ const KEY_NAMES: Record<string, string> = {
 };
 const KNOWN_KEYS = new Set(KEY_OPTIONS.map(([, v]) => v));
 
-/**
- * Teclas do computador -> placa. O bloco decide o caminho:
- * "quando apertar a tecla" vai pelo cabo; "... pelo Wi-Fi" vai pela rede
- * (receptor do boot.py, no último IP conhecido).
- */
+/** Teclas do computador -> placa (cabo ou Bluetooth), com o programa rodando. */
 document.addEventListener("keydown", (e) => {
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
   const target = e.target as HTMLElement | null;
@@ -938,77 +884,14 @@ document.addEventListener("keydown", (e) => {
   if (Blockly.WidgetDiv.isVisible() || Blockly.DropDownDiv.isVisible()) return;
   const name = KEY_NAMES[e.key] ?? e.key.toLowerCase();
   if (!KNOWN_KEYS.has(name)) return;
-
-  // teclas dos jogos: pelo cabo se a placa estiver conectada rodando o programa, senão pelo Wi-Fi
-  const jogo = gameKeys(workspace).has(name);
-  const usbOk = board.connected && monitorMode === "program" && !busy;
-  const viaUsb = (keysOfType(workspace, "event_key").has(name) || jogo) && usbOk;
-  const viaWifi = keysOfType(workspace, "event_key_wifi").has(name) || (jogo && !usbOk);
-  if (!viaUsb && !viaWifi) return;
+  // "quando apertar a tecla" e as teclas dos jogos
+  if (!eventKeys(workspace).has(name) && !gameKeys(workspace).has(name)) return;
+  if (!board.connected || monitorMode !== "program" || busy) return;
   e.preventDefault();
   const rotulo = e.key === " " ? "espaço" : e.key;
-
-  if (viaUsb) {
-    void board.write(`${KEY_MARK}${name}\n`).catch(() => {});
-    setStatus(`Tecla "${rotulo}" enviada pelo cabo`, "ok");
-  }
-  if (viaWifi) {
-    const ip = wifiIp ?? localStorage.getItem(WIFI_IP_KEY);
-    if (!ip) {
-      setStatus("Tecla pelo Wi-Fi: ainda não sei o IP da placa. Envie um programa com 'conectar no Wi-Fi' pelo cabo uma vez.", "error");
-      return;
-    }
-    fetchLocal(`http://${ip}:${OTA_PORT}/k?n=${encodeURIComponent(name)}`, {}, 3000)
-      .then(() => setStatus(`Tecla "${rotulo}" enviada pelo Wi-Fi para ${ip}`, "ok"))
-      .catch(() =>
-        setStatus(
-          `Tecla "${rotulo}": a placa não respondeu em ${ip}. ` +
-            (location.protocol === "https:" ? AJUDA_HTTPS : "Está ligada e na rede?"),
-          "error",
-        ),
-      );
-  }
+  void board.sendEvent(name).catch(() => {});
+  setStatus(`Tecla "${rotulo}" enviada ${board.transport === "ble" ? "por Bluetooth" : "pelo cabo"}`, "ok");
 });
-
-btnUploadWifi.addEventListener("click", () =>
-  run("Envio por Wi-Fi", async () => {
-    const last = wifiIp ?? localStorage.getItem(WIFI_IP_KEY) ?? "";
-    const ip = prompt("Endereço (IP) da placa na rede:", last)?.trim();
-    if (!ip) {
-      setStatus("Envio por Wi-Fi cancelado");
-      return;
-    }
-    const base = `http://${ip}:${OTA_PORT}`;
-
-    setStatus(`Procurando a placa em ${ip}…`);
-    try {
-      const r = await fetchLocal(`${base}/ping`, {}, 4000);
-      if ((await r.text()) !== "betablocks") throw new Error("resposta inesperada");
-    } catch (err) {
-      const motivo = err instanceof DOMException && err.name === "AbortError"
-        ? "tempo esgotado (4 s sem resposta)"
-        : `${(err as Error).name}: ${(err as Error).message}`;
-      throw new Error(
-        `A placa não respondeu em ${ip}:${OTA_PORT} — ${motivo}. ` +
-          (location.protocol === "https:"
-            ? AJUDA_HTTPS
-            : "Ela precisa estar ligada, na mesma rede, e já ter recebido um programa pelo cabo com o bloco 'conectar no Wi-Fi'."),
-      );
-    }
-
-    setStatus("Enviando programa por Wi-Fi…");
-    const files = { ...programFiles(), "main.py": generateCode() };
-    // text/plain evita o preflight CORS; o boot.py lê o corpo como JSON
-    const r = await fetchLocal(
-      `${base}/programa`,
-      { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(files) },
-      15000,
-    );
-    if (!r.ok) throw new Error(`a placa respondeu ${r.status}`);
-    localStorage.setItem(WIFI_IP_KEY, ip);
-    setStatus("Programa enviado por Wi-Fi! A placa está reiniciando.", "ok");
-  }),
-);
 
 // ---------- gravação do MicroPython ----------
 // Em duas etapas porque requestPort() só funciona direto num clique do usuário:
@@ -1025,7 +908,7 @@ btnFlash.addEventListener("click", () =>
 
     let viaBootloaderCmd = false;
     if (board.connected) {
-      const port = board.port!;
+      const port = board.port; // null no Bluetooth
       setStatus("Reiniciando a placa em modo de gravação…");
       try {
         await board.enterBootloader();
@@ -1034,7 +917,7 @@ btnFlash.addEventListener("click", () =>
         /* sem MicroPython (firmware Arduino ou placa zerada) */
       }
       await board.disconnect();
-      if (!viaBootloaderCmd) {
+      if (!viaBootloaderCmd && port) {
         // "Toque de 1200 bps": firmware Arduino com USB CDC reinicia em modo de gravação
         try {
           await port.open({ baudRate: 1200 });

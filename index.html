@@ -25,8 +25,8 @@
         <input id="file-load" type="file" accept=".json,application/json" hidden />
         <span class="toolbar-sep"></span>
         <button id="btn-connect" class="btn">Conectar</button>
+        <button id="btn-connect-ble" class="btn" title="Conecta sem cabo, pelo Bluetooth" hidden>ᛒ Bluetooth</button>
         <button id="btn-upload" class="btn btn-primary" disabled>▶ Enviar</button>
-        <button id="btn-upload-wifi" class="btn" title="Envia o programa pela rede, sem cabo">📶 Enviar por Wi-Fi</button>
         <button id="btn-stop" class="btn" disabled>■ Parar</button>
         <button id="btn-flash" class="btn btn-ghost" disabled>Gravar MicroPython</button>
       </div>
@@ -39,14 +39,6 @@
         <section id="monitor-panel" class="monitor" hidden>
           <h3>Entradas ao vivo <span id="monitor-rate" class="monitor-rate"></span></h3>
           <div id="monitor-cards" class="monitor-cards"></div>
-        </section>
-        <section id="wifi-panel" class="monitor" hidden>
-          <h3>Wi-Fi</h3>
-          <div id="wifi-info" class="wifi-info"></div>
-          <div id="wifi-send" class="wifi-send" hidden>
-            <select id="wifi-send-name"></select>
-            <button id="btn-wifi-send" class="btn btn-primary">Enviar</button>
-          </div>
         </section>
         <section id="display-panel" class="monitor" hidden>
           <h3>Visor</h3>
@@ -72,8 +64,8 @@
 
     <div id="unsupported" class="modal" hidden>
       <div class="modal-box">
-        <h2>Navegador sem Web Serial</h2>
-        <p>Use o <b>Google Chrome</b> ou <b>Microsoft Edge</b> (desktop) para conectar ao ESP32.</p>
+        <h2>Navegador sem Web Serial nem Bluetooth</h2>
+        <p>Use o <b>Google Chrome</b> ou <b>Microsoft Edge</b> para conectar ao ESP32 (no celular, Chrome no Android).</p>
       </div>
     </div>
 
