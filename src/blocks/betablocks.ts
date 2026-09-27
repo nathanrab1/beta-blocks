@@ -11,6 +11,7 @@ const INPUT_COLOUR = 160;
 const OLED_COLOUR = 260;
 const GAME_COLOUR = 330;
 const TEXT_COLOUR = 70;
+const RADIO_COLOUR = "#d6268f";
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
 const NAMED_COLORS: Record<string, [number, number, number]> = {
@@ -328,6 +329,106 @@ export function defineBlocks(): void {
       colour: CONTROL_COLOUR,
       tooltip: "Repete os blocos de dentro sem parar.",
     },
+    {
+      type: "radio_group",
+      message0: "definir grupo do rádio %1",
+      args0: [{ type: "field_number", name: "GROUP", value: 1, min: 0, max: 255, precision: 1 }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: RADIO_COLOUR,
+      tooltip: "As placas só conversam com as do mesmo grupo (0 a 255). Coloque no 'ao iniciar'. Sem este bloco, o grupo é 0.",
+    },
+    {
+      type: "radio_send_number",
+      message0: "rádio envia número %1",
+      args0: [{ type: "input_value", name: "VALUE", check: "Number" }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: RADIO_COLOUR,
+      tooltip: "Manda um número para todas as placas do mesmo grupo que estão por perto.",
+    },
+    {
+      type: "radio_send_value",
+      message0: "rádio envia %1 = %2",
+      args0: [
+        { type: "input_value", name: "NAME" },
+        { type: "input_value", name: "VALUE", check: "Number" },
+      ],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: RADIO_COLOUR,
+      tooltip: "Manda um nome junto com um número (ex.: \"temp\" = 25). Quem recebe sabe qual valor é pelo nome.",
+    },
+    {
+      type: "radio_send_text",
+      message0: "rádio envia texto %1",
+      args0: [{ type: "input_value", name: "TEXT" }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: RADIO_COLOUR,
+      tooltip: "Manda um texto para todas as placas do mesmo grupo que estão por perto.",
+    },
+    {
+      type: "radio_on_number",
+      message0: "ao receber número pelo rádio",
+      nextStatement: null,
+      hat: "cap",
+      colour: RADIO_COLOUR,
+      tooltip:
+        "Roda os blocos pendurados quando chega um número de outra placa. Use o bloco 'número recebido'. " +
+        "Mensagens para este mesmo bloco esperam a vez; uma mensagem para outro 'ao receber' ou uma tecla para o que estiver rodando aqui.",
+    },
+    {
+      type: "radio_on_value",
+      message0: "ao receber nome = valor pelo rádio",
+      nextStatement: null,
+      hat: "cap",
+      colour: RADIO_COLOUR,
+      tooltip:
+        "Roda os blocos pendurados quando chega um nome = valor de outra placa. Use 'nome recebido' e 'valor recebido'. " +
+        "Mensagens para este mesmo bloco esperam a vez; uma mensagem para outro 'ao receber' ou uma tecla para o que estiver rodando aqui.",
+    },
+    {
+      type: "radio_on_text",
+      message0: "ao receber texto pelo rádio = %1",
+      args0: [{ type: "field_input", name: "TEXT", text: "" }],
+      nextStatement: null,
+      hat: "cap",
+      colour: RADIO_COLOUR,
+      tooltip:
+        "Roda os blocos pendurados quando chega esse texto de outra placa (maiúsculas e minúsculas tanto faz). " +
+        "Deixe vazio para rodar com qualquer texto e use o bloco 'texto recebido'. " +
+        "Mensagens para este mesmo bloco esperam a vez; uma mensagem para outro 'ao receber' ou uma tecla para o que estiver rodando aqui.",
+    },
+    {
+      type: "radio_number",
+      message0: "número recebido",
+      output: "Number",
+      colour: RADIO_COLOUR,
+      tooltip: "O último número que chegou pelo rádio (0 se ainda não chegou nenhum).",
+    },
+    {
+      type: "radio_name",
+      message0: "nome recebido",
+      output: "String",
+      colour: RADIO_COLOUR,
+      tooltip: "O nome do último nome = valor que chegou pelo rádio.",
+    },
+    {
+      type: "radio_value",
+      message0: "valor recebido",
+      output: "Number",
+      colour: RADIO_COLOUR,
+      tooltip: "O valor do último nome = valor que chegou pelo rádio (0 se ainda não chegou nenhum).",
+    },
+    {
+      type: "radio_text",
+      message0: "texto recebido",
+      output: "String",
+      colour: RADIO_COLOUR,
+      tooltip: "O último texto que chegou pelo rádio.",
+    },
   ]);
 
   defineDrawBlock();
@@ -427,6 +528,24 @@ export function defineBlocks(): void {
     return `_jogo_velocidade = ${v}\n`;
   };
 
+  pythonGenerator.forBlock["radio_group"] = (block) => {
+    const g = Math.min(255, Math.max(0, Math.round(Number(block.getFieldValue("GROUP")) || 0)));
+    return `radio_grupo(${g})\n`;
+  };
+  pythonGenerator.forBlock["radio_send_number"] = (block, gen) =>
+    `radio_enviar_numero(${gen.valueToCode(block, "VALUE", Order.NONE) || "0"})\n`;
+  pythonGenerator.forBlock["radio_send_value"] = (block, gen) => {
+    const nome = gen.valueToCode(block, "NAME", Order.NONE) || "''";
+    return `radio_enviar_valor(${nome}, ${gen.valueToCode(block, "VALUE", Order.NONE) || "0"})\n`;
+  };
+  pythonGenerator.forBlock["radio_send_text"] = (block, gen) =>
+    `radio_enviar_texto(${gen.valueToCode(block, "TEXT", Order.NONE) || "''"})\n`;
+  for (const t of Object.keys(RADIO_HATS)) pythonGenerator.forBlock[t] = () => "";
+  pythonGenerator.forBlock["radio_number"] = () => ["_radio_numero", Order.ATOMIC];
+  pythonGenerator.forBlock["radio_name"] = () => ["_radio_nome", Order.ATOMIC];
+  pythonGenerator.forBlock["radio_value"] = () => ["_radio_valor", Order.ATOMIC];
+  pythonGenerator.forBlock["radio_text"] = () => ["_radio_texto", Order.ATOMIC];
+
   // todo laço passa por _bb_ponto() a cada volta: é onde um evento novo interrompe
   pythonGenerator.forBlock["forever"] = (block, gen) => {
     const branch = gen.statementToCode(block, "DO");
@@ -474,6 +593,10 @@ export function resetBoardCode(ledPin: number): string {
     "    pass",
     "try:",
     "    _key_timer.deinit()",
+    "except Exception:",
+    "    pass",
+    "try:",
+    "    _radio.active(False)",
     "except Exception:",
     "    pass",
     "try:",
@@ -542,7 +665,10 @@ function defineDrawBlock() {
       this.setPreviousStatement(true);
       this.setNextStatement(true);
       this.setColour(OLED_COLOUR);
-      this.setTooltip("Mostra um desenho no visor. Clique em Editar para desenhar.");
+      this.setTooltip(
+        "Mostra um desenho no visor, por cima do que já está na tela (texto, outro desenho). " +
+          "Clique em Editar para desenhar. Para trocar de desenho (animação), use 'limpar visor' antes.",
+      );
     },
     saveExtraState(this: DrawBlock) {
       return { bitmap: this.bitmapB64 };
@@ -695,6 +821,29 @@ export function preamble(pin: number): string {
     "        _bb_pendente = f",
     "    return disparar",
     "",
+    "# fila de eventos do radio: [(chave, f)], a chave diz quais blocos 'ao receber' rodam.",
+    "# Rodam no proximo _bb_ponto(), pausando o que estiver rodando. Mensagens para os mesmos",
+    "# blocos esperam a vez, em ordem; uma tecla ou uma mensagem para outros blocos corta",
+    "# o que esta rodando (senao um 'repetir para sempre' la dentro seguraria tudo).",
+    "_bb_fila = []",
+    "_bb_na_fila = None  # chave do evento da fila que esta rodando",
+    "_bb_cortar = False",
+    "_bb_ler_radio = None  # le as mensagens que chegaram (so com blocos de radio)",
+    "",
+    "def _bb_rodar_fila():",
+    "    global _bb_na_fila, _bb_cortar",
+    "    try:",
+    "        while _bb_fila and _bb_rodando:",
+    "            _bb_na_fila, f = _bb_fila.pop(0)",
+    "            _bb_cortar = False",
+    "            try:",
+    "                f()",
+    "            except _BBInterrompe:",
+    "                if _bb_pendente is not None:",
+    "                    return  # uma tecla chegou: ela roda agora, o resto da fila depois",
+    "    finally:",
+    "        _bb_na_fila = None",
+    "",
     "def _bb_rodar_eventos():",
     "    global _bb_pendente, _bb_em_evento",
     "    while _bb_pendente is not None and _bb_rodando:",
@@ -718,6 +867,14 @@ export function preamble(pin: number): string {
     "    if time.ticks_diff(agora, _bb_folga) >= 20:",
     "        _bb_folga = agora",
     "        time.sleep_ms(1)",
+    "        if _bb_ler_radio:",
+    "            _bb_ler_radio()",
+    "    if _bb_na_fila is not None:",
+    "        if _bb_cortar or _bb_pendente is not None:",
+    "            raise _BBInterrompe()",
+    "        return  # mensagens para o mesmo bloco esperam ele acabar",
+    "    if _bb_fila:",
+    "        _bb_rodar_fila()",
     "    if _bb_pendente is not None:",
     "        if _bb_em_evento:",
     "            raise _BBInterrompe()",
@@ -787,7 +944,10 @@ export function preamble(pin: number): string {
   ].join("\n");
 }
 
-const HAT_TYPES = ["event_start", "event_key"];
+/** Chapéus "ao receber ... pelo rádio" e o tipo de mensagem de cada um. */
+const RADIO_HATS: Record<string, string> = { radio_on_number: "n", radio_on_value: "v", radio_on_text: "t" };
+
+const HAT_TYPES = ["event_start", "event_key", ...Object.keys(RADIO_HATS)];
 
 /** Teclas usadas pelos blocos "quando apertar a tecla". */
 export function eventKeys(workspace: Blockly.Workspace): Set<string> {
@@ -807,6 +967,8 @@ export function programCode(workspace: Blockly.Workspace): string {
   const jogos = gameKeys(workspace).size > 0;
   if (keyHats.length > 0 || jogos) code += keysRuntimeCode();
   if (jogos) code += gamesCode(workspace);
+  const radioHats = tops.filter((b) => b.type in RADIO_HATS);
+  if (usesRadio(workspace)) code += radioCode();
   keyHats.forEach((hat, i) => {
     const next = hat.getNextBlock();
     let body = next ? pythonGenerator.blockToCode(next) : "";
@@ -814,6 +976,18 @@ export function programCode(workspace: Blockly.Workspace): string {
     const key = hat.getFieldValue("KEY");
     code += `def _tecla_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
     code += `_teclas[${JSON.stringify(key)}] = _bb_evento(_tecla_${i})\n\n`;
+  });
+
+  // "ao receber ... pelo rádio": cada pilha vira uma função da lista do seu tipo de mensagem
+  radioHats.forEach((hat, i) => {
+    const next = hat.getNextBlock();
+    let body = next ? pythonGenerator.blockToCode(next) : "";
+    if (Array.isArray(body)) body = body[0];
+    // "ao receber texto = ...": só roda quando chega esse texto (vazio: qualquer um)
+    const texto = hat.type === "radio_on_text" ? String(hat.getFieldValue("TEXT") ?? "").trim() : "";
+    const filtro = texto ? pythonGenerator.quote_(texto) : "None";
+    code += `def _radio_ao_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
+    code += `_radio_ao['${RADIO_HATS[hat.type]}'].append((${filtro}, _radio_ao_${i}))\n\n`;
   });
 
   // "ao iniciar" (existe só um no espaço de trabalho)
@@ -824,8 +998,8 @@ export function programCode(workspace: Blockly.Workspace): string {
     if (c) code += c;
   }
 
-  // com teclas, o programa precisa continuar vivo para receber os eventos
-  if (keyHats.length > 0) {
+  // com teclas ou rádio, o programa precisa continuar vivo para receber os eventos
+  if (keyHats.length > 0 || radioHats.length > 0) {
     code += "\n# roda os eventos que chegarem\nwhile True:\n    _bb_ponto()\n    time.sleep_ms(20)\n";
   }
   return pythonGenerator.finish(code);
@@ -856,6 +1030,159 @@ function keysRuntimeCode(): string {
     "",
     "_key_timer = Timer(1)",
     "_key_timer.init(period=15, mode=Timer.PERIODIC, callback=_bb_protegido(_tecla_ler))",
+    "",
+    "",
+  ].join("\n");
+}
+
+function usesRadio(workspace: Blockly.Workspace): boolean {
+  return programBlocks(workspace).some((b) => b.type.startsWith("radio_"));
+}
+
+/**
+ * Rádio entre placas por ESP-NOW: cada mensagem vai para todas as placas por
+ * perto (sem roteador), e quem é de outro grupo ignora. Mensagem:
+ * "BB" + grupo + número de sequência + tipo (n, v ou t) + dados.
+ * O rádio do Wi-Fi é dividido com o Bluetooth do app, então cada mensagem vai
+ * duas vezes e quem recebe descarta a cópia (mesma placa, mesma sequência).
+ * As mensagens são lidas no _bb_ponto() (sem irq: a fila do micropython.schedule
+ * já é dividida entre o Bluetooth e os timers) e rodam pela _bb_fila, em ordem.
+ */
+function radioCode(): string {
+  return [
+    "# --- radio entre placas (ESP-NOW) ---",
+    "import network, espnow",
+    "_radio_wlan = network.WLAN(network.STA_IF)",
+    "_radio_wlan.active(True)",
+    "try:",
+    "    _radio_wlan.disconnect()",
+    "    _radio_wlan.config(channel=1)  # todas as placas no mesmo canal",
+    "except Exception:",
+    "    pass",
+    "_radio = espnow.ESPNow()",
+    "try:",
+    "    _radio.active(False)  # programa anterior pode ter deixado ligado",
+    "except Exception:",
+    "    pass",
+    "_radio.config(rxbuf=4096)  # espaco para varias mensagens chegando juntas",
+    "_radio.active(True)",
+    "_RADIO_TODOS = b'\\xff' * 6",
+    "try:",
+    "    _radio.add_peer(_RADIO_TODOS)",
+    "except OSError:",
+    "    pass  # ja estava",
+    "",
+    "_radio_grupo = 0",
+    "_radio_seq = time.ticks_ms() & 255",
+    "_radio_visto = {}  # placa -> ultima sequencia recebida (descarta a copia)",
+    "_radio_ao = {'n': [], 'v': [], 't': []}  # (texto do filtro ou None, bloco 'ao receber') de cada tipo",
+    "_radio_numero = 0",
+    "_radio_nome = ''",
+    "_radio_valor = 0",
+    "_radio_texto = ''",
+    "",
+    "def radio_grupo(g):",
+    "    global _radio_grupo",
+    "    _radio_grupo = int(g) & 255",
+    "",
+    "def _radio_enviar(tipo, dados):",
+    "    global _radio_seq",
+    "    _radio_seq = (_radio_seq + 1) & 255",
+    "    msg = b'BB' + bytes((_radio_grupo, _radio_seq)) + tipo + dados",
+    "    for _ in range(2):",
+    "        try:",
+    "            _radio.send(_RADIO_TODOS, msg, False)",
+    "        except OSError:",
+    "            pass  # fila de envio cheia: essa copia se perde",
+    "",
+    "def _radio_num_bytes(v):",
+    "    try:",
+    "        v = float(v)",
+    "        if v == int(v):",
+    "            v = int(v)",
+    "    except (TypeError, ValueError, OverflowError):",
+    "        v = 0",
+    "    return str(v).encode()",
+    "",
+    "def _radio_num(b):",
+    "    try:",
+    "        v = float(_radio_str(b))",
+    "        return int(v) if v == int(v) else v",
+    "    except (ValueError, OverflowError):",
+    "        return 0",
+    "",
+    "# texto -> bytes com no maximo n bytes, sem partir uma letra acentuada ao meio",
+    "def _radio_cortar(txt, n):",
+    "    txt = str(txt)[:n]",
+    "    b = txt.encode()",
+    "    while len(b) > n:",
+    "        txt = txt[:-1]",
+    "        b = txt.encode()",
+    "    return b",
+    "",
+    "def _radio_str(b):",
+    "    try:",
+    "        return b.decode()",
+    "    except Exception:",
+    "        return ''",
+    "",
+    "# 'ao receber texto = ...': sem diferenca de maiusculas nem espacos nas pontas",
+    "def _radio_igual(a, b):",
+    "    return a.strip().lower() == b.strip().lower()",
+    "",
+    "def radio_enviar_numero(v):",
+    "    _radio_enviar(b'n', _radio_num_bytes(v))",
+    "",
+    "def radio_enviar_valor(nome, v):",
+    "    _radio_enviar(b'v', _radio_cortar(nome, 40) + b'\\x00' + _radio_num_bytes(v))",
+    "",
+    "def radio_enviar_texto(txt):",
+    "    _radio_enviar(b't', _radio_cortar(txt, 200))",
+    "",
+    "def _radio_tratar(tipo, dados, blocos):",
+    "    global _radio_numero, _radio_nome, _radio_valor, _radio_texto",
+    "    if tipo == 'n':",
+    "        _radio_numero = _radio_num(dados)",
+    "    elif tipo == 'v':",
+    "        i = dados.find(b'\\x00')",
+    "        if i < 0:",
+    "            return",
+    "        _radio_nome = _radio_str(dados[:i])",
+    "        _radio_valor = _radio_num(dados[i + 1:])",
+    "    else:",
+    "        _radio_texto = _radio_str(dados)",
+    "    for f in blocos:",
+    "        f()",
+    "",
+    "def _radio_ler():",
+    "    global _bb_cortar",
+    "    while True:",
+    "        mac, msg = _radio.irecv(0)",
+    "        if mac is None:",
+    "            return",
+    "        if len(msg) < 5 or msg[0] != 66 or msg[1] != 66 or msg[2] != _radio_grupo:",
+    "            continue  # nao e do Beta Blocks ou e de outro grupo",
+    "        mac = bytes(mac)",
+    "        if _radio_visto.get(mac) == msg[3]:",
+    "            continue  # a segunda copia da mesma mensagem",
+    "        _radio_visto[mac] = msg[3]",
+    "        tipo = chr(msg[4])",
+    "        if tipo not in _radio_ao:",
+    "            continue",
+    "        dados = bytes(msg[5:])",
+    "        txt = _radio_str(dados) if tipo == 't' else ''",
+    "        blocos = tuple(f for filtro, f in _radio_ao[tipo] if filtro is None or _radio_igual(txt, filtro))",
+    "        if not blocos:",
+    "            _radio_tratar(tipo, dados, ())  # nenhum 'ao receber': so guarda para os blocos 'recebido'",
+    "            continue",
+    "        if _bb_na_fila is not None and _bb_na_fila != blocos:",
+    "            # mensagem para outros blocos: corta o que esta rodando e passa na frente",
+    "            _bb_fila.clear()",
+    "            _bb_cortar = True",
+    "        if len(_bb_fila) < 10:  # fila cheia: a mensagem se perde",
+    "            _bb_fila.append((blocos, lambda t=tipo, d=dados, b=blocos: _radio_tratar(t, d, b)))",
+    "",
+    "_bb_ler_radio = _radio_ler",
     "",
     "",
   ].join("\n");
@@ -1536,8 +1863,8 @@ export function oledCode(): string {
     "def visor_desenho(dados):",
     "    _visor_garantir()",
     "    b = binascii.a2b_base64(dados)",
-    "    n = min(len(b), len(oled.buffer))",
-    "    oled.buffer[:n] = b[:n]",
+    "    # por cima: so os pixels acesos do desenho (128x64) entram; o resto da tela fica como estava",
+    "    oled.blit(framebuf.FrameBuffer(bytearray(b), 128, 64, framebuf.MONO_VLSB), 0, 0, 0)",
     "    _visor_mostrar()",
     "",
     "",
@@ -1640,6 +1967,42 @@ export const toolbox = {
         { kind: "block", type: "oled_snake" },
         { kind: "block", type: "oled_dino" },
         { kind: "block", type: "oled_flappy" },
+      ],
+    },
+    {
+      kind: "category",
+      name: "Rádio",
+      colour: RADIO_COLOUR,
+      contents: [
+        { kind: "label", text: "Grupo" },
+        { kind: "block", type: "radio_group" },
+        { kind: "label", text: "Enviar" },
+        {
+          kind: "block",
+          type: "radio_send_number",
+          inputs: { VALUE: { shadow: { type: "math_number", fields: { NUM: 0 } } } },
+        },
+        {
+          kind: "block",
+          type: "radio_send_value",
+          inputs: {
+            NAME: { shadow: { type: "text", fields: { TEXT: "nome" } } },
+            VALUE: { shadow: { type: "math_number", fields: { NUM: 0 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "radio_send_text",
+          inputs: { TEXT: { shadow: { type: "text", fields: { TEXT: "" } } } },
+        },
+        { kind: "label", text: "Receber" },
+        { kind: "block", type: "radio_on_number" },
+        { kind: "block", type: "radio_number" },
+        { kind: "block", type: "radio_on_value" },
+        { kind: "block", type: "radio_name" },
+        { kind: "block", type: "radio_value" },
+        { kind: "block", type: "radio_on_text" },
+        { kind: "block", type: "radio_text" },
       ],
     },
     {
