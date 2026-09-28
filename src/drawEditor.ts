@@ -11,7 +11,6 @@ import { textPixels as fontPixels } from "./font5x7";
 
 export const DRAW_W = 128;
 export const DRAW_H = 64;
-const SCALE = 4;
 
 // ---- conversão pixels <-> MONO_VLSB base64 ----
 
@@ -66,6 +65,8 @@ function paintPixels(canvas: HTMLCanvasElement, pixels: Uint8Array) {
 
 // ---- editor ----
 
+const stampLabel = (st: Stamp) => `${st.label}<span class="btn-label"> Emojis</span> ▾`;
+
 /** Abre o editor; resolve com o novo desenho (base64) ou null se cancelado. */
 export function openDrawEditor(initialB64: string): Promise<string | null> {
   return new Promise((resolve) => {
@@ -88,32 +89,34 @@ export function openDrawEditor(initialB64: string): Promise<string | null> {
     modal.innerHTML = `
       <div class="modal-box draw-box">
         <h2>Desenhar no visor</h2>
-        <div class="draw-tools">
-          <button class="btn tool active" data-tool="brush" title="Pincel">✎ Pincel</button>
-          <button class="btn tool" data-tool="eraser" title="Borracha">◻ Borracha</button>
-          <button class="btn tool" data-tool="line" title="Linha">╱ Linha</button>
-          <button class="btn tool" data-tool="circle" title="Círculo (só o aro)">○ Círculo</button>
-          <button class="btn tool" data-tool="circleFill" title="Círculo preenchido">● Círculo</button>
-          <button class="btn tool" data-tool="rect" title="Retângulo (só a borda)">▭ Retângulo</button>
-          <button class="btn tool" data-tool="rectFill" title="Retângulo preenchido">▬ Retângulo</button>
-          <label class="field">Espessura <input type="range" min="1" max="10" value="2" class="brush-size"> <span class="brush-val">2</span></label>
+        <div class="draw-side">
+        <div class="draw-tools draw-main">
+          <button class="btn tool active" data-tool="brush" title="Pincel">✎<span class="btn-label"> Pincel</span></button>
+          <button class="btn tool" data-tool="eraser" title="Borracha">◻<span class="btn-label"> Borracha</span></button>
+          <button class="btn tool" data-tool="line" title="Linha">╱<span class="btn-label"> Linha</span></button>
+          <button class="btn tool" data-tool="circle" title="Círculo (só o aro)">○<span class="btn-label"> Círculo</span></button>
+          <button class="btn tool" data-tool="circleFill" title="Círculo preenchido">●<span class="btn-label"> Círculo</span></button>
+          <button class="btn tool" data-tool="rect" title="Retângulo (só a borda)">▭<span class="btn-label"> Retângulo</span></button>
+          <button class="btn tool" data-tool="rectFill" title="Retângulo preenchido">▬<span class="btn-label"> Retângulo</span></button>
+          <label class="field"><span class="field-label">Espessura</span> <input type="range" min="1" max="10" value="2" class="brush-size"> <span class="brush-val">2</span></label>
           <button class="btn draw-clear">Limpar</button>
         </div>
         <div class="draw-tools draw-stamps">
-          <button class="btn stamp-open" title="Escolher emoji">${STAMPS[0].label} Emojis ▾</button>
+          <button class="btn stamp-open" title="Escolher emoji">${stampLabel(STAMPS[0])}</button>
           <div class="stamp-grid" hidden>
             ${STAMPS.map((st) => `<button class="btn tool stamp-btn" data-tool="stamp" data-stamp="${st.id}" title="Carimbar ${st.label}">${st.label}</button>`).join("")}
           </div>
-          <label class="field">Tamanho
+          <label class="field"><span class="field-label">Tamanho</span>
             <select class="stamp-scale"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option></select>
           </label>
         </div>
         <div class="draw-tools draw-text">
-          <button class="btn tool" data-tool="text" title="Texto">T Texto</button>
+          <button class="btn tool" data-tool="text" title="Texto">T<span class="btn-label"> Texto</span></button>
           <input type="text" class="text-input" placeholder="Digite o texto..." maxlength="40">
-          <label class="field">Tamanho
+          <label class="field"><span class="field-label">Tamanho</span>
             <select class="text-scale"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option></select>
           </label>
+        </div>
         </div>
         <div class="draw-frame"><canvas class="draw-canvas" width="${DRAW_W}" height="${DRAW_H}"></canvas></div>
         <div class="modal-actions">
@@ -123,9 +126,8 @@ export function openDrawEditor(initialB64: string): Promise<string | null> {
       </div>`;
     document.body.appendChild(modal);
 
+    // o tamanho na tela vem do CSS (4x no computador; no celular, o que couber)
     const canvas = modal.querySelector<HTMLCanvasElement>(".draw-canvas")!;
-    canvas.style.width = `${DRAW_W * SCALE}px`;
-    canvas.style.height = `${DRAW_H * SCALE}px`;
     const repaint = () => {
       paintPixels(canvas, pixels);
       drawCursor();
@@ -138,14 +140,17 @@ export function openDrawEditor(initialB64: string): Promise<string | null> {
       sizeVal.textContent = String(brush);
     });
 
+    const box = modal.querySelector<HTMLElement>(".draw-box")!;
+    box.dataset.tool = tool;
     const stampOpen = modal.querySelector<HTMLButtonElement>(".stamp-open")!;
     const stampGrid = modal.querySelector<HTMLElement>(".stamp-grid")!;
     modal.querySelectorAll<HTMLButtonElement>(".tool").forEach((b) => {
       b.addEventListener("click", () => {
         tool = b.dataset.tool as Tool;
+        box.dataset.tool = tool; // no celular deitado, a faixa mostra só as opções desta ferramenta
         if (b.dataset.stamp) {
           stamp = STAMPS.find((st) => st.id === b.dataset.stamp) ?? STAMPS[0];
-          stampOpen.textContent = `${stamp.label} Emojis ▾`;
+          stampOpen.innerHTML = stampLabel(stamp);
           stampGrid.hidden = true;
         }
         modal.querySelectorAll(".tool").forEach((t) => t.classList.toggle("active", t === b));
@@ -326,14 +331,24 @@ export function openDrawEditor(initialB64: string): Promise<string | null> {
 
     const isShapeTool = () => tool !== "brush" && tool !== "eraser" && tool !== "stamp" && tool !== "text";
 
+    const carimbar = (p: [number, number]) => {
+      const area = tool === "stamp" ? stampPixels(p[0], p[1]) : textPixels(p[0], p[1]);
+      for (const [x, y] of area) pixels[y * DRAW_W + x] = 1;
+    };
+    // no toque não existe "passar por cima": o carimbo/texto segue o dedo e só marca ao soltar
+    let carimboNoDedo = false;
+
     canvas.addEventListener("pointerdown", (e) => {
       drawing = true;
       canvas.setPointerCapture(e.pointerId);
       const p = toPixel(e);
       if (tool === "stamp" || tool === "text") {
-        const area = tool === "stamp" ? stampPixels(p[0], p[1]) : textPixels(p[0], p[1]);
-        for (const [x, y] of area) pixels[y * DRAW_W + x] = 1;
         drawing = false;
+        if (e.pointerType === "mouse") carimbar(p);
+        else {
+          carimboNoDedo = true;
+          hover = p;
+        }
       } else if (isShapeTool()) {
         start = p;
         base = pixels.slice(); // guarda o fundo para o preview
@@ -361,8 +376,18 @@ export function openDrawEditor(initialB64: string): Promise<string | null> {
       repaint();
     });
     const stop = () => { drawing = false; last = null; start = null; base = null; repaint(); };
-    canvas.addEventListener("pointerup", stop);
-    canvas.addEventListener("pointercancel", stop);
+    canvas.addEventListener("pointerup", (e) => {
+      if (carimboNoDedo) {
+        carimboNoDedo = false;
+        carimbar(toPixel(e));
+      }
+      if (e.pointerType !== "mouse") hover = null; // o dedo saiu: sem prévia em cima do desenho
+      stop();
+    });
+    canvas.addEventListener("pointercancel", () => {
+      carimboNoDedo = false; // o toque foi cancelado (ex.: virou gesto do sistema): não carimba
+      stop();
+    });
     canvas.addEventListener("pointerleave", () => { hover = null; repaint(); });
     sizeInput.addEventListener("input", repaint);
     modal.querySelectorAll<HTMLButtonElement>(".tool").forEach((b) => b.addEventListener("click", repaint));

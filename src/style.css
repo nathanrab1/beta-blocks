@@ -127,7 +127,7 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
 .draw-tools .btn { padding: 6px 10px; font-size: 13px; }
 .draw-tools .tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .draw-frame { padding: 12px; background: #0b0d12; border-radius: 10px; display: inline-block; }
-.draw-canvas { display: block; image-rendering: pixelated; background: #000; cursor: none; touch-action: none; }
+.draw-canvas { display: block; width: 512px; height: 256px; image-rendering: pixelated; background: #000; cursor: none; touch-action: none; }
 
 .btn.active { background: var(--ok); border-color: var(--ok); color: #fff; }
 .draw-stamps { position: relative; }
@@ -213,4 +213,59 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
   .blocklyToolboxCategoryIcon { display: none; }
 
   .statusbar { padding: 4px 8px; font-size: 11.5px; }
+}
+
+/* ---------- editor de desenho no celular: tela cheia, em pé ou deitado ---------- */
+@media (max-width: 600px), (max-height: 500px) {
+  .draw-box {
+    position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; border-radius: 0;
+    padding: 10px 12px; overflow: auto;
+    display: grid; gap: 8px; align-content: start;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "titulo acoes" "quadro quadro" "lado lado";
+  }
+  .draw-box h2 { grid-area: titulo; margin: 0; font-size: 17px; align-self: center; }
+  .draw-box .modal-actions { grid-area: acoes; margin: 0; }
+  .draw-box .draw-frame { grid-area: quadro; display: block; padding: 6px; }
+  .draw-box .draw-canvas { width: 100%; height: auto; }
+  .draw-side { grid-area: lado; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .draw-tools { margin: 0; max-width: none; }
+  .draw-tools .btn-label, .draw-stamps .field-label, .draw-text .field-label { display: none; } /* só o ícone: ✎ ◻ ╱ ○ ● ▭ ▬ */
+  .draw-tools .btn { min-width: 42px; min-height: 42px; padding: 6px 10px; font-size: 17px; }
+  .draw-tools .field input[type="range"] { width: 110px; }
+  .draw-text { flex-wrap: nowrap; }
+  .draw-text .text-input { flex: 1 1 80px; min-width: 0; font-size: 16px; } /* 16px: o iPhone não dá zoom ao digitar */
+  /* emojis: painel no meio da tela, com botões grandes para o dedo */
+  .stamp-grid {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; z-index: 110;
+    grid-template-columns: repeat(6, 44px);
+  }
+  .stamp-grid .stamp-btn { width: 44px; height: 44px; }
+}
+
+/* deitado: o desenho grande em cima e uma faixa de botões embaixo */
+@media (max-height: 500px) and (orientation: landscape) {
+  .draw-box {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: 1fr auto;
+    grid-template-areas: "quadro quadro" "lado acoes";
+    align-content: stretch; overflow: hidden;
+  }
+  .draw-box h2 { display: none; }
+  .draw-box .draw-frame { justify-self: center; align-self: center; }
+  /* o maior 2:1 que cabe acima da faixa (faixa 44 + espaços ~46) */
+  .draw-box .draw-canvas { width: min(calc(100vw - 36px), calc((100dvh - 90px) * 2)); }
+  .draw-side { flex-direction: row; align-items: center; gap: 6px; overflow-x: auto; }
+  .draw-side .draw-tools { display: contents; }
+  .draw-side .btn { min-width: 40px; min-height: 40px; padding: 4px 8px; flex: none; }
+  .draw-side .field { flex: none; }
+  .draw-side .field-label { display: none; } /* só o controle: slider, 1× */
+  .draw-side .draw-clear { order: 1; } /* Limpar no fim da faixa */
+  /* só as opções da ferramenta escolhida */
+  .draw-box:is([data-tool="stamp"], [data-tool="text"]) .draw-main .field,
+  .draw-box:not([data-tool="stamp"]) .draw-stamps .field,
+  .draw-box:not([data-tool="text"]) .draw-text .field,
+  .draw-box:not([data-tool="text"]) .draw-text .text-input { display: none; }
+  .draw-text .text-input { flex: 0 1 180px; }
+  .stamp-grid { grid-template-columns: repeat(9, 44px); }
 }
