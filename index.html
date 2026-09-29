@@ -56,7 +56,7 @@
         <button id="btn-upload" class="btn btn-primary" aria-label="Enviar" disabled>▶<span class="btn-label"> Enviar</span></button>
         <button id="btn-stop" class="btn" aria-label="Parar" disabled>■<span class="btn-label"> Parar</span></button>
         <button id="btn-flash" class="btn btn-ghost" disabled>Gravar MicroPython</button>
-        <a class="btn btn-ghost" href="./controle.html" target="_blank" title="Abra este endereço no celular para controlar a placa por Bluetooth">📱 Controle no celular</a>
+        <a id="link-controle" class="btn btn-ghost" href="./controle.html" target="_blank" title="Abra este endereço no celular para controlar a placa por Bluetooth">📱 Controle no celular</a>
         <button id="btn-install" class="btn btn-ghost" title="Instala o Beta Blocks com ícone na tela inicial">📲 Instalar app</button>
       </div>
     </header>
@@ -136,6 +136,21 @@
           <button id="btn-drive-close" class="btn btn-primary">Fechar</button>
         </div>
       </div>
+    </div>
+
+    <!-- celular: controle por cima dos blocos, usando a mesma conexão (main.ts) -->
+    <div id="pad-view" class="pad-view" hidden>
+      <header class="pad-view-head">
+        <button id="btn-pad-close" class="btn">✕ Blocos</button>
+        <strong>Controle</strong>
+      </header>
+      <p id="pad-status" class="pad-status"></p>
+      <button id="btn-pad-connect" class="btn btn-bt pad-connect" hidden><img class="bt-icon" src="./icons/bluetooth.svg" alt="" /> Conectar</button>
+      <div id="pad-pad" class="gp-pad" hidden></div>
+      <div id="pad-keys" class="gp-keys" hidden></div>
+      <p id="pad-no-keys" class="pad-status" hidden>
+        O programa não usa teclas. Use o bloco “quando apertar a tecla” (ou um jogo) e envie o programa de novo.
+      </p>
     </div>
 
     <script type="module" src="./src/main.ts"></script>

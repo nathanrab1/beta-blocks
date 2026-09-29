@@ -41,6 +41,7 @@ import {
   type DriveFile,
 } from "./drive";
 import { workspaceThumbnail } from "./thumbnail";
+import { renderGamepad } from "./gamepad";
 
 const STORAGE_KEY = "betablocks.workspace";
 
@@ -851,6 +852,7 @@ function refreshButtons() {
   btnUpload.disabled = !on;
   btnStop.disabled = !on;
   btnFlash.disabled = !serialSupported;
+  updatePadView();
 }
 
 let busy = false;
@@ -1051,6 +1053,71 @@ function releaseKey(name: string) {
 document.addEventListener("keyup", (e) => releaseKey(KEY_NAMES[e.key] ?? e.key.toLowerCase()));
 // a janela perdeu o foco com a tecla apertada: o keyup nunca vem, então solta tudo
 window.addEventListener("blur", () => [...heldKeys].forEach(releaseKey));
+
+// ---------- controle dentro do app (celular) ----------
+// "📱 Controle" no celular abre os botões por cima dos blocos, usando a mesma conexão: não precisa
+// conectar de novo (a página controle.html abriria outra ligação, e o Chrome pede a placa de novo).
+// As teclas vêm dos blocos, como as do teclado do computador.
+const padView = $("pad-view");
+const padStatus = $("pad-status");
+const btnPadConnect = $<HTMLButtonElement>("btn-pad-connect");
+const padEls = { pad: $("pad-pad"), keys: $("pad-keys"), noKeys: $("pad-no-keys") };
+const toque = window.matchMedia("(pointer: coarse)");
+
+function setPadStatus(text: string, kind: "" | "ok" | "error" = "") {
+  padStatus.textContent = text;
+  padStatus.className = `pad-status ${kind}`;
+}
+
+function updatePadView() {
+  if (padView.hidden) return;
+  const pronto = board.connected && monitorMode === "program";
+  btnPadConnect.hidden = board.connected || !bleSupported;
+  if (!pronto) {
+    padEls.pad.hidden = padEls.keys.hidden = padEls.noKeys.hidden = true;
+    setPadStatus(
+      board.connected
+        ? "Volte aos blocos e toque em ▶ para rodar o programa."
+        : bleSupported
+          ? "Conecte a placa para usar o controle."
+          : "Este navegador não tem Bluetooth. No Android, use o Chrome.",
+    );
+    return;
+  }
+  setPadStatus(`Conectado ${board.transport === "ble" ? `por Bluetooth (${board.ble?.name ?? "placa"})` : "pelo cabo"}`, "ok");
+  const keys = [...new Set([...eventKeys(workspace), ...gameKeys(workspace)])];
+  renderGamepad(
+    padEls,
+    keys,
+    gameHoldKeys(workspace),
+    (name) => (busy || !board.connected ? Promise.resolve() : board.sendEvent(name)),
+    () => setPadStatus("A tecla não chegou à placa.", "error"),
+  );
+}
+
+function openPadView(open: boolean) {
+  if (open === !padView.hidden) return;
+  padView.hidden = !open;
+  if (open) {
+    history.pushState({ controle: true }, ""); // o "voltar" do Android fecha o controle, não o app
+    updatePadView();
+  } else if (history.state?.controle) {
+    history.back();
+  }
+}
+
+$("link-controle").addEventListener("click", (e) => {
+  if (!toque.matches && !compacto.matches) return; // computador: abre a página para o celular
+  e.preventDefault();
+  openPadView(true);
+});
+$("btn-pad-close").addEventListener("click", () => openPadView(false));
+window.addEventListener("popstate", () => {
+  if (!padView.hidden) {
+    padView.hidden = true;
+  }
+});
+btnPadConnect.addEventListener("click", () => btnConnectBle.click());
 
 // ---------- gravação do MicroPython ----------
 // Em duas etapas porque requestPort() só funciona direto num clique do usuário:

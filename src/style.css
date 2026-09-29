@@ -177,6 +177,26 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
 .drive-trash:hover { border-color: var(--danger); }
 .modal-spacer { flex: 1; }
 
+/* ---------- controle dentro do app (celular) ---------- */
+.pad-view {
+  position: fixed; inset: 0; z-index: 300; overflow: auto; padding: 12px 16px 24px;
+  background: var(--bg); user-select: none; -webkit-user-select: none; touch-action: manipulation;
+}
+.pad-view-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 18px; }
+.pad-status { font-size: 14px; color: var(--muted); line-height: 1.4; margin: 0 0 14px; }
+.pad-status.ok { color: var(--ok); }
+.pad-status.error { color: var(--danger); }
+.pad-connect { width: 100%; padding: 14px; font-size: 17px; font-weight: 600; border-radius: 10px; margin-bottom: 14px; }
+/* mesmos botões da página controle.html (gamepad.ts) */
+.gp-pad { display: grid; grid-template-columns: repeat(3, 84px); grid-template-rows: repeat(2, 84px); gap: 10px; justify-content: center; margin: 4px 0 16px; }
+.gp-pad button, .gp-keys button { border: 0; color: #fff; cursor: pointer; font-family: inherit; }
+.gp-pad button { background: #444a57; font-size: 34px; border-radius: 16px; }
+.gp-pad button:active, .gp-pad button.on { background: #262a33; }
+.gp-keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.gp-keys button { background: var(--ok); font-size: 22px; font-weight: 600; padding: 20px 8px; border-radius: 14px; }
+.gp-keys button:active, .gp-keys button.on { background: #1e8449; }
+.gp-keys button.wide { grid-column: 1 / -1; }
+
 /* ---------- celular (tela estreita) ---------- */
 .menu-btn, .panel-toggle { display: none; }
 

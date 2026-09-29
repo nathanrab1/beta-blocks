@@ -4,6 +4,7 @@
  * Tocar num botão é o mesmo que apertar a tecla no computador.
  */
 
+import { renderGamepad } from "./gamepad";
 import { BleLink, bleSupported, requestBleDevice } from "./serial/ble";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -21,21 +22,10 @@ const readings = $("readings");
 const KEYS_EVERY_MS = 4000;
 const MONITOR_EVERY_MS = 300;
 
-const ARROWS: Record<string, [string, number]> = {
-  // tecla -> [símbolo, posição na grade 3x2]
-  up: ["▲", 1],
-  left: ["◀", 3],
-  down: ["▼", 4],
-  right: ["▶", 5],
-};
-const LABELS: Record<string, string> = { space: "espaço", enter: "Enter" };
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let link: BleLink | null = null;
 let keysShown = "";
-/** Teclas que o jogo quer saber quando são soltas (a placa lista "-left" junto de "left"). */
-let holdKeys = new Set<string>();
 
 function setStatus(text: string, kind: "" | "ok" | "error" = "") {
   statusEl.textContent = text;
@@ -57,46 +47,16 @@ function showControls(on: boolean) {
   }
 }
 
-function keyButton(name: string, text: string): HTMLButtonElement {
-  const b = document.createElement("button");
-  b.textContent = text;
-  b.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    b.classList.add("on");
-    navigator.vibrate?.(10);
-    link?.key(name).catch(() => setStatus("A tecla não chegou à placa.", "error"));
-  });
-  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
-    b.addEventListener(ev, () => {
-      if (!b.classList.contains("on")) return;
-      b.classList.remove("on");
-      // segurando, o jogo anda até saber que soltou
-      if (holdKeys.has(name)) link?.key(`-${name}`).catch(() => {});
-    });
-  }
-  return b;
-}
-
+/** A placa lista as teclas do programa; "-left" junto de "left" = o jogo quer saber quando solta. */
 function renderKeys(all: string[]) {
-  holdKeys = new Set(all.filter((k) => k.startsWith("-")).map((k) => k.slice(1)));
-  const keys = all.filter((k) => !k.startsWith("-"));
-  const arrows = keys.filter((k) => k in ARROWS);
-  const others = keys.filter((k) => !(k in ARROWS));
-
-  const cells: HTMLElement[] = Array.from({ length: 6 }, () => document.createElement("span"));
-  for (const k of arrows) cells[ARROWS[k][1]] = keyButton(k, ARROWS[k][0]);
-  pad.replaceChildren(...cells);
-  pad.hidden = arrows.length === 0;
-
-  keysEl.replaceChildren(
-    ...others.map((k) => {
-      const b = keyButton(k, LABELS[k] ?? k.toUpperCase());
-      if (k === "space") b.classList.add("wide");
-      return b;
-    }),
+  const hold = new Set(all.filter((k) => k.startsWith("-")).map((k) => k.slice(1)));
+  renderGamepad(
+    { pad, keys: keysEl, noKeys },
+    all.filter((k) => !k.startsWith("-")),
+    hold,
+    (name) => link?.key(name) ?? Promise.resolve(),
+    () => setStatus("A tecla não chegou à placa.", "error"),
   );
-  keysEl.hidden = others.length === 0;
-  noKeys.hidden = keys.length > 0;
 }
 
 async function refreshKeys(l: BleLink) {
