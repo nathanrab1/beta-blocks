@@ -236,26 +236,6 @@ export function defineBlocks(): void {
       tooltip: "Mostra o valor no Console do Beta Blocks.",
     },
     {
-      type: "oled_config",
-      message0: "visor OLED %1  SDA %2  SCL %3",
-      args0: [
-        {
-          type: "field_dropdown",
-          name: "SIZE",
-          options: [
-            ["128x64", "128x64"],
-            ["128x32", "128x32"],
-          ],
-        },
-        { type: "field_number", name: "SDA", value: 8, min: 0, max: 48, precision: 1 },
-        { type: "field_number", name: "SCL", value: 9, min: 0, max: 48, precision: 1 },
-      ],
-      previousStatement: null,
-      nextStatement: null,
-      colour: OLED_COLOUR,
-      tooltip: "Liga o visor OLED I2C nos pinos escolhidos. Use uma vez, no começo do programa.",
-    },
-    {
       type: "oled_text",
       message0: "mostrar no visor %1 na linha %2",
       args0: [
@@ -295,10 +275,11 @@ export function defineBlocks(): void {
       type: "oled_snake",
       message0: "🐍 jogo da cobrinha",
       previousStatement: null,
+      nextStatement: null,
       colour: GAME_COLOUR,
       tooltip:
         "Inicia o jogo da cobrinha no visor. Controle com as setas do teclado (pelo cabo ou pelo Bluetooth). " +
-        "Coloque depois de 'iniciar visor'. O jogo roda para sempre.",
+        "A tecla x sai do jogo e o programa segue para o próximo bloco.",
     },
     {
       type: "game_speed",
@@ -313,19 +294,21 @@ export function defineBlocks(): void {
       type: "oled_flappy",
       message0: "🐤 jogo do passarinho (flappy)",
       previousStatement: null,
+      nextStatement: null,
       colour: GAME_COLOUR,
       tooltip:
         "Flappy Bird no visor: ↑ ou espaço bate as asas para passar entre os canos. " +
-        "Teclas pelo cabo ou pelo Bluetooth. Coloque depois de 'iniciar visor'. O jogo roda para sempre.",
+        "Teclas pelo cabo ou pelo Bluetooth. A tecla x sai do jogo e o programa segue para o próximo bloco.",
     },
     {
       type: "oled_dino",
       message0: "🦖 jogo do dinossauro",
       previousStatement: null,
+      nextStatement: null,
       colour: GAME_COLOUR,
       tooltip:
         "O jogo do dinossauro do Chrome no visor: ↑ ou espaço pula os cactos, ↓ agacha dos pássaros. " +
-        "Teclas pelo cabo ou pelo Bluetooth. Coloque depois de 'iniciar visor'. O jogo roda para sempre.",
+        "Teclas pelo cabo ou pelo Bluetooth. A tecla x sai do jogo e o programa segue para o próximo bloco.",
     },
     {
       type: "forever",
@@ -517,11 +500,6 @@ export function defineBlocks(): void {
   pythonGenerator.forBlock["show_value"] = (block, gen) => {
     const v = gen.valueToCode(block, "VALUE", Order.NONE) || "''";
     return `print(${v})\n`;
-  };
-
-  pythonGenerator.forBlock["oled_config"] = (block) => {
-    const [w, h] = block.getFieldValue("SIZE").split("x");
-    return `visor_iniciar(${block.getFieldValue("SDA")}, ${block.getFieldValue("SCL")}, ${w}, ${h})\n`;
   };
 
   pythonGenerator.forBlock["oled_text"] = (block, gen) => {
@@ -1283,13 +1261,12 @@ export function monitorCode(pins: InputPins): string {
   ].join("\n");
 }
 
-const OLED_BLOCK_TYPES = ["oled_config", "oled_text", "oled_plot", "oled_clear", "oled_draw", "oled_snake", "oled_dino", "oled_flappy"];
 
 /** Jogos do visor e as teclas que cada um usa. */
 const GAMES: Record<string, string[]> = {
-  oled_snake: ["up", "down", "left", "right"],
-  oled_dino: ["up", "down", "space"],
-  oled_flappy: ["up", "space"],
+  oled_snake: ["up", "down", "left", "right", "x"],
+  oled_dino: ["up", "down", "space", "x"],
+  oled_flappy: ["up", "space", "x"],
   game_speed: [],
 };
 
@@ -1322,13 +1299,36 @@ function gamesCommonCode(): string {
     "import random",
     "_jogo_tecla = False  # alguma tecla do jogo foi apertada?",
     "_jogo_velocidade = 5  # 1..10, mudado pelo bloco 'velocidade do jogo'",
+    "_jogo_sair = False  # a tecla x foi apertada: o jogo acaba na proxima pausa",
+    "",
+    "class _JogoSair(BaseException):",
+    "    pass",
+    "",
+    "def _jogo_tecla_sair():",
+    "    global _jogo_sair",
+    "    _jogo_sair = True",
+    "",
+    "# toda pausa dos jogos passa por aqui: e onde a tecla x encerra o jogo",
+    "def _jogo_pausa(ms):",
+    "    _bb_esperar(ms)",
+    "    if _jogo_sair:",
+    "        raise _JogoSair()",
     "",
     "# o jogo troca as teclas dele em _teclas; ao sair (ou ser interrompido) devolve as do programa",
     "def _jogo_rodar(jogo):",
+    "    global _jogo_sair",
     "    antes = dict(_teclas)",
+    "    _jogo_sair = False",
+    "    _teclas['x'] = _jogo_tecla_sair",
     "    try:",
     "        jogo()",
+    "    except _JogoSair:",
+    "        # saiu com x: visor e LED limpos, e o programa segue no proximo bloco",
+    "        oled.fill(0)",
+    "        _visor_mostrar()",
+    "        led_rgb(0, 0, 0)",
     "    finally:",
+    "        _jogo_sair = False",
     "        _teclas.clear()",
     "        _teclas.update(antes)",
     "",
@@ -1345,10 +1345,10 @@ function gamesCommonCode(): string {
     "        _jogo_centro(sub, 26 if alto else 12)",
     "    _jogo_centro(dica, oled.height - (12 if alto else 8))",
     "    _visor_mostrar()",
-    "    _bb_esperar(500)",
+    "    _jogo_pausa(500)",
     "    _jogo_tecla = False",
     "    while not _jogo_tecla and _bb_rodando:",
-    "        _bb_esperar(50)",
+    "        _jogo_pausa(50)",
     "",
     "# sprite a partir de linhas de texto ('#' = pixel aceso) -> (framebuffer, largura, altura)",
     "def _jogo_sprite(linhas):",
@@ -1397,7 +1397,7 @@ function snakeCode(): string {
     "    H = (oled.height - 2) // C",
     "    OX = 1 + (oled.width - 2 - W * C) // 2",
     "    OY = 1 + (oled.height - 2 - H * C) // 2",
-    "    _jogo_esperar('COBRINHA', '', 'aperte uma seta')",
+    "    _jogo_esperar('COBRINHA', 'x sai do jogo', 'aperte uma seta')",
     "    while _bb_rodando:",
     "        cobra = [(W // 2 - i, H // 2) for i in range(3)]  # cabeca primeiro",
     "        _cob_dir = (1, 0)",
@@ -1433,7 +1433,7 @@ function snakeCode(): string {
     "                oled.fill_rect(OX + sx * C, OY + sy * C, C, C, 1)",
     "            oled.rect(OX + maca[0] * C, OY + maca[1] * C, C, C, 1)",
     "            _visor_mostrar()",
-    "            _bb_esperar(passo)",
+    "            _jogo_pausa(passo)",
     "            if led_ate is not None and time.ticks_diff(time.ticks_ms(), led_ate) >= 0:",
     "                led_rgb(0, 0, 0)",
     "                led_ate = None",
@@ -1511,7 +1511,7 @@ function dinoCode(): string {
     "    obstaculos = [_jogo_sprite(o) for o in _OBSTACULOS]",
     "    passaro = _jogo_sprite(_PASSARO)",
     "    pulo = -4.8 if oled.height >= 64 else -3.8  # velocidade inicial do pulo",
-    "    _jogo_esperar('DINO', '', 'aperte uma tecla')",
+    "    _jogo_esperar('DINO', 'x sai do jogo', 'aperte uma tecla')",
     "    while _bb_rodando:",
     "        x = 8",
     "        y = float(CHAO - dh)",
@@ -1588,7 +1588,7 @@ function dinoCode(): string {
     "            else:",
     "                oled.blit(dino_a if not no_chao or (quadro // 3) % 2 == 0 else dino_b, x, int(y), 0)",
     "            _visor_mostrar()",
-    "            _bb_esperar(25)",
+    "            _jogo_pausa(25)",
     "            if led_ate is not None and time.ticks_diff(time.ticks_ms(), led_ate) >= 0:",
     "                led_rgb(0, 0, 0)",
     "                led_ate = None",
@@ -1639,7 +1639,7 @@ function flappyCode(): string {
     "    VAO = 26 if H >= 64 else 16  # abertura entre os canos",
     "    ENTRE = 64  # distancia entre canos",
     "    X = 20      # posicao do passarinho",
-    "    _jogo_esperar('FLAPPY', '', 'aperte uma tecla')",
+    "    _jogo_esperar('FLAPPY', 'x sai do jogo', 'aperte uma tecla')",
     "    while _bb_rodando:",
     "        y = float(H // 2 - ah // 2)",
     "        vy = 0.0",
@@ -1692,7 +1692,7 @@ function flappyCode(): string {
     "            oled.blit(ave_a if vy < 0 and (quadro // 2) % 2 == 0 else ave_b, X, yi, 0)",
     "            oled.text(str(pontos), W - len(str(pontos)) * 8, 0, 1)",
     "            _visor_mostrar()",
-    "            _bb_esperar(25)",
+    "            _jogo_pausa(25)",
     "            if led_ate is not None and time.ticks_diff(time.ticks_ms(), led_ate) >= 0:",
     "                led_rgb(0, 0, 0)",
     "                led_ate = None",
@@ -1704,15 +1704,12 @@ function flappyCode(): string {
   ].join("\n");
 }
 
-export function usesOled(workspace: Blockly.Workspace): boolean {
-  return programBlocks(workspace).some((b) => OLED_BLOCK_TYPES.includes(b.type));
-}
-
 /** Marca que inicia um quadro do visor na serial: "\x1f<w>,<h>,<base64 do framebuffer>". */
 export const DISPLAY_MARK = "\x1f";
 
 /**
  * Funções auxiliares do visor OLED (precisa do arquivo ssd1306.py na placa).
+ * A tela fica sempre ligada nas portas 8 (SDA) e 9 (SCL): todo programa já começa com ela.
  * Sem o OLED físico, usa um visor virtual na memória; em ambos os casos o
  * conteúdo é enviado ao app (no máximo 10 quadros/s) para o preview.
  */
@@ -1776,7 +1773,7 @@ export function oledCode(): string {
     "    _visor_mostrar()",
     "",
     "def _visor_garantir():",
-    "    # sem o bloco 'iniciar visor': liga com os pinos padrao (SDA 8, SCL 9)",
+    "    # o visor ja foi ligado no inicio; so por garantia",
     "    if oled is None:",
     "        visor_iniciar(8, 9, 128, 64)",
     "",
@@ -1895,6 +1892,10 @@ export function oledCode(): string {
     "    _visor_mostrar()",
     "",
     "",
+    "# a tela fica sempre nas portas 8 (SDA) e 9 (SCL): todo programa ja comeca com ela ligada",
+    "visor_iniciar(8, 9, 128, 64)",
+    "",
+    "",
   ].join("\n");
 }
 
@@ -1970,7 +1971,6 @@ export const toolbox = {
       name: "Visor",
       colour: OLED_COLOUR,
       contents: [
-        { kind: "block", type: "oled_config" },
         {
           kind: "block",
           type: "oled_text",

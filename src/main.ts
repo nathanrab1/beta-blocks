@@ -15,7 +15,6 @@ import {
   DISPLAY_MARK,
   eventKeys,
   gameKeys,
-  usesOled,
   oledCode,
   type InputPins,
 } from "./blocks/betablocks";
@@ -194,15 +193,15 @@ Blockly.ContextMenuRegistry.registry.register({
 /** Arquivos que acompanham o main.py: boot.py (Bluetooth) e bibliotecas usadas. */
 function programFiles(): Record<string, string> {
   const files: Record<string, string> = { "boot.py": bootSource };
-  // o MicroPython não traz o driver do OLED
-  if (usesOled(workspace)) files["ssd1306.py"] = ssd1306Source;
+  // o MicroPython não traz o driver do OLED (a tela fica sempre ligada, em todo programa)
+  files["ssd1306.py"] = ssd1306Source;
   return files;
 }
 
 function generateCode(): string {
   return (
     preamble(currentPin()) +
-    (usesOled(workspace) ? oledCode() : "") +
+    oledCode() +
     monitorCode(collectInputPins(workspace)) +
     programCode(workspace)
   );
@@ -269,7 +268,7 @@ function loadWorkspace() {
     Blockly.serialization.workspaces.load(starterWorkspace, workspace);
   }
   ensureStartBlock();
-  if (removed) setStatus(`${removed} bloco(s) que não existem mais (ex.: Wi-Fi) foram tirados do projeto`, "error");
+  if (removed) setStatus(`${removed} bloco(s) que não existem mais (ex.: Wi-Fi, visor OLED) foram tirados do projeto`, "error");
 }
 
 /**
@@ -351,7 +350,7 @@ function openProject(data: any): boolean {
     const removed = dropUnknownBlocks(state);
     Blockly.serialization.workspaces.load(state, workspace);
     ensureStartBlock();
-    if (removed) setStatus(`${removed} bloco(s) que não existem mais (ex.: Wi-Fi) foram tirados do projeto`, "error");
+    if (removed) setStatus(`${removed} bloco(s) que não existem mais (ex.: Wi-Fi, visor OLED) foram tirados do projeto`, "error");
   } finally {
     Blockly.Events.setGroup(false);
   }
