@@ -1708,6 +1708,17 @@ function flappyCode(): string {
 export const DISPLAY_MARK = "\x1f";
 
 /**
+ * Logo da Beta Kit (src/lib/betakit-logo.svg) em 128x64, 1 bit por pixel, no formato
+ * do buffer do SSD1306 (MONO_VLSB) em base64. Feito desenhando o SVG com 120 px de
+ * largura, centralizado, num canvas 128x64 e acendendo os pixels com mais de metade coberta.
+ */
+const LOGO_B64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+/v7+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP7+/v4AAAAAAAAAAAAAAAAAgMDg4MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/////AwODg8PDw8ODg4MCAAAAAAACAwODg8PDw8PDw8ODgwIAAAADg4OD/////4ODg4OAAAACAwMDg4ODw8PDg4ODA4ODg4AAAAAAAAAAAAAAA/////wAAAIDA4ODg4CAAAAAB4+fn4wAA4ODg/v/////g4ODgAAAAAAAAAAAA//////8DAQEAAAABAQP////+AAAA/v///395eHh4eHh4eX9/f38AAAAAAP////8AAAAAAAAA/v///wcBAQAAAAAAAQP/////AAAAAAAAAAAAAAD/////ePz+/++HAwEAAAAAAAD/////AAAAAQH//////wEBAQEAAAAAAAAAAAAfPz8fDx8ePDw8PDweHx8PBwEAAAABBw8fHz48PDw8PDwcHh4MAAAAAAAABx8fPz48PDwYAAABBw8fPz48PDw8PDweDz8/Pz8AAAAAAAAAAAAAAD8/Pz8AAAEDBw8fPjw4MAAAAD8/Pz8AAAAAAAEPHz8/PDw8PBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
+/** Pingo do i do logo (a parte azul no SVG): anima separado, caindo e quicando. */
+const LOGO_PINGO = "106,21,107,21,105,22,106,22,107,22,108,22,104,23,105,23,106,23,107,23,108,23,104,24,105,24,106,24,107,24,108,24,105,25,106,25,107,25,108,25,106,26,107,26";
+/** Onde cada letra de "beta kit" termina (coluna seguinte à última acesa): aparecem uma a uma. */
+const LOGO_LETRAS = "22,42,56,76,102,109,124";
+
+/**
  * Funções auxiliares do visor OLED (precisa do arquivo ssd1306.py na placa).
  * A tela fica sempre ligada nas portas 8 (SDA) e 9 (SCL): todo programa já começa com ela.
  * Sem o OLED físico, usa um visor virtual na memória; em ambos os casos o
@@ -1894,6 +1905,85 @@ export function oledCode(): string {
     "",
     "# a tela fica sempre nas portas 8 (SDA) e 9 (SCL): todo programa ja comeca com ela ligada",
     "visor_iniciar(8, 9, 128, 64)",
+    "",
+    "# ao ligar (ou reset, ou programa novo): animacao do logo da Beta Kit (~5 s), a tela apaga e o projeto comeca",
+    `_LOGO = '${LOGO_B64}'`,
+    `_LOGO_PINGO = (${LOGO_PINGO})  # x, y de cada pixel do pingo do i`,
+    `_LOGO_LETRAS = (${LOGO_LETRAS})  # coluna onde cada letra termina`,
+    "",
+    "def _visor_logo():",
+    "    if isinstance(oled, _VisorVirtual) or len(oled.buffer) != 1024:",
+    "        return  # sem tela de verdade: sem animacao",
+    "    import random",
+    "    W = 128",
+    "    t0 = time.ticks_ms()",
+    "    tela = oled.buffer",
+    "    cheio = bytearray(binascii.a2b_base64(_LOGO))  # logo inteiro",
+    "    letras = bytearray(cheio)  # o logo sem o pingo do i",
+    "    fb = framebuf.FrameBuffer(letras, W, 64, framebuf.MONO_VLSB)",
+    "    pingo = [(_LOGO_PINGO[i], _LOGO_PINGO[i + 1]) for i in range(0, len(_LOGO_PINGO), 2)]",
+    "    for x, y in pingo:",
+    "        fb.pixel(x, y, 0)",
+    "    # 1) as letras aparecem uma a uma",
+    "    oled.fill(0)",
+    "    for fim in _LOGO_LETRAS:",
+    "        for p in range(8):",
+    "            tela[p * W:p * W + fim] = letras[p * W:p * W + fim]",
+    "        _visor_mostrar()",
+    "        _bb_esperar(130)",
+    "    # 2) o pingo cai do alto e quica ate parar em cima do i",
+    "    dy = -(min(y for x, y in pingo) + 8.0)  # comeca acima da tela",
+    "    vy = 0.0",
+    "    quiques = 0",
+    "    while True:",
+    "        vy += 1.2",
+    "        dy += vy",
+    "        if dy >= 0:",
+    "            dy = 0.0",
+    "            quiques += 1",
+    "            vy = -vy * 0.45",
+    "            if quiques > 2 or abs(vy) < 1.5:",
+    "                break",
+    "        tela[:] = letras",
+    "        d = int(dy)",
+    "        for x, y in pingo:",
+    "            oled.pixel(x, y + d, 1)",
+    "        _visor_mostrar()",
+    "        _bb_esperar(33)",
+    "    tela[:] = cheio",
+    "    _visor_mostrar()",
+    "    # 3) parado ate completar 4 s; antes, sorteia a ordem em que os pixels vao sumir",
+    "    acesos = []",
+    "    for i in range(len(cheio)):",
+    "        v = cheio[i]",
+    "        if v:",
+    "            x, y0 = i % W, (i // W) * 8",
+    "            for bit in range(8):",
+    "                if (v >> bit) & 1:",
+    "                    acesos.append((x, y0 + bit))",
+    "    for i in range(len(acesos) - 1, 0, -1):  # embaralha (o random do MicroPython nao tem shuffle)",
+    "        j = random.randint(0, i)",
+    "        acesos[i], acesos[j] = acesos[j], acesos[i]",
+    "    _bb_esperar(max(0, 4000 - time.ticks_diff(time.ticks_ms(), t0)))",
+    "    # 4) os pixels somem em 1 s, pelo relogio: quantos ja apagaram acompanha o tempo que passou",
+    "    #    (assim dura 1 s mesmo com o tempo que cada quadro leva para chegar na tela)",
+    "    ini = time.ticks_ms()",
+    "    n = len(acesos)",
+    "    feitos = 0",
+    "    while feitos < n:",
+    "        alvo = min(n, n * time.ticks_diff(time.ticks_ms(), ini) // 1000)",
+    "        if alvo > feitos:",
+    "            for x, y in acesos[feitos:alvo]:",
+    "                oled.pixel(x, y, 0)",
+    "            feitos = alvo",
+    "            _visor_mostrar()",
+    "        _bb_esperar(10)",
+    "    oled.fill(0)",
+    "    _visor_mostrar()",
+    "    # 5) 1 s com a tela apagada, e ai o projeto comeca",
+    "    _bb_esperar(1000)",
+    "",
+    "_visor_logo()",
     "",
     "",
   ].join("\n");
