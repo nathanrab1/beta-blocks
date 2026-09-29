@@ -156,6 +156,43 @@ const workspace = Blockly.inject("blockly-div", {
   new ResizeObserver(() => Blockly.svgResize(workspace)).observe($("blockly-div"));
 }
 
+// ---------- instalar o app (PWA) ----------
+// Último item do menu. Se o Chrome já ofereceu a instalação (beforeinstallprompt), abre a janela
+// dele; senão (iPhone, Chrome que ainda não ofereceu), mostra como instalar pelo menu do navegador.
+// Aberto como app instalado, o botão some.
+{
+  type PedidoInstalar = Event & { prompt(): Promise<void> };
+  const btnInstall = $<HTMLButtonElement>("btn-install");
+  const installModal = $("install-modal");
+  const instalado =
+    window.matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
+  btnInstall.hidden = instalado;
+  let pedido: PedidoInstalar | null = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    pedido = e as PedidoInstalar;
+  });
+  btnInstall.addEventListener("click", async () => {
+    if (pedido) {
+      const p = pedido;
+      pedido = null; // cada aviso só pode ser usado uma vez
+      await p.prompt();
+      return;
+    }
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    $("install-instructions").innerHTML = ios
+      ? "No Safari, toque em <b>Compartilhar</b> (quadrado com seta) e depois em <b>Adicionar à Tela de Início</b>."
+      : "No menu do Chrome (<b>⋮</b>), toque em <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>. " +
+        "O ícone <b>Beta Blocks</b> aparece na tela inicial e o app abre em tela cheia, mesmo sem internet.";
+    installModal.hidden = false;
+  });
+  $("btn-install-close").addEventListener("click", () => (installModal.hidden = true));
+  window.addEventListener("appinstalled", () => {
+    btnInstall.hidden = true;
+    setStatus("App instalado: o ícone Beta Blocks está na tela inicial.", "ok");
+  });
+}
+
 // Sem navegação por teclado entre blocos: as setas ficam livres para os jogos
 // e para os blocos "quando apertar a tecla". Ficam só copiar/colar/desfazer/apagar.
 {
