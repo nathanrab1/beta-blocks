@@ -18,7 +18,7 @@ const RADIO_COLOUR = "#d6268f";
 const SOUND_COLOUR = "#cf63cf"; // lilás, como a categoria Som do Scratch
 
 /** Pino padrão do buzzer nos blocos de Som. */
-const SOM_PINO = 10;
+const SOM_PINO = 12;
 const NOTE_OPTIONS: [string, string][] = [
   ["Dó", "0"], ["Dó♯", "1"], ["Ré", "2"], ["Ré♯", "3"], ["Mi", "4"], ["Fá", "5"],
   ["Fá♯", "6"], ["Sol", "7"], ["Sol♯", "8"], ["Lá", "9"], ["Lá♯", "10"], ["Si", "11"],
@@ -29,7 +29,7 @@ const BEAT_OPTIONS: [string, string][] = [
   ["2 batidas", "2"], ["4 batidas", "4"],
 ];
 /** Melodias prontas: [nome no menu, id, notas]. Notas: letra, # opcional, oitava (R = pausa) e
- * batidas depois do ':' (sem ':' = 1). Só as melodias usadas no programa vão para a placa. */
+ * batidas depois do ':' (sem ':' = 1). Só as melodias e efeitos usados no programa vão para a placa. */
 const MELODIES: [string, string, string][] = [
   ["Parabéns a você", "PARABENS",
     "G4:.75 G4:.25 A4 G4 C5 B4:2 G4:.75 G4:.25 A4 G4 D5 C5:2 " +
@@ -64,19 +64,77 @@ const MELODIES: [string, string, string][] = [
   ["Tetris", "TETRIS",
     "E5 B4:.5 C5:.5 D5 C5:.5 B4:.5 A4 A4:.5 C5:.5 E5 D5:.5 C5:.5 B4:1.5 C5:.5 D5 E5 C5 A4 A4:2 " +
     "R:.5 D5:1.5 F5:.5 A5 G5:.5 F5:.5 E5:1.5 C5:.5 E5 D5:.5 C5:.5 B4 B4:.5 C5:.5 D5 E5 C5 A4 A4:2"],
-  ["efeito: moeda", "MOEDA", "B5:.25 E6:1"],
-  ["efeito: subir", "SUBIR", "C5:.25 E5:.25 G5:.25 C6:.5"],
-  ["efeito: descer", "DESCER", "C6:.25 G5:.25 E5:.25 C5:.5"],
-  ["efeito: pulo", "PULO", "G4:.125 C5:.125 G5:.25"],
-  ["efeito: laser", "LASER", "C7:.125 A6:.125 F6:.125 D6:.125 B5:.125 G5:.125"],
-  ["efeito: poder", "PODER", "C5:.125 E5:.125 G5:.125 C6:.125 E6:.125 G6:.125 C7:.5"],
-  ["efeito: sirene", "SIRENE", "A5:.5 D6:.5 A5:.5 D6:.5 A5:.5 D6:.5 A5:.5 D6:.5"],
-  ["efeito: alarme", "ALARME", "A6:.25 R:.25 A6:.25 R:.25 A6:.25 R:.25 A6:.25 R:.25"],
-  ["efeito: erro", "ERRO", "G3:.5 C3:1.5"],
-  ["efeito: fim de jogo", "FIM", "G4 F#4 F4 E4:3"],
-  ["efeito: vitória", "VITORIA", "C5:.33 E5:.33 G5:.33 C6:1 G5:.5 C6:1.5"],
+  ["Beatles: Hey Jude (trecho)", "HEYJUDE",
+    "G5 E5:2 R:.5 E5:.5 G5:.5 A5:.5 D5:2 R:.5 D5:.5 E5:.5 F5:.5 C6:1.5 C6:.5 B5:.5 G5:.5 A5:.5 G5:.5 F5:.5 E5:2.5"],
+  ["Beatles: Yesterday (trecho)", "YESTERDAY",
+    "G5:.5 F5:.5 F5:2 R A5:.5 B5:.5 C#6:.5 D6:.5 E6:.5 F6:.5 E6:.75 D6:.25 D6:2"],
+  ["Yellow Submarine", "YELLOW",
+    "A5:.75 G5:.25 C6:2.75 A5:.25 G5:.75 A5:.25 F5:3 A5:.75 A5:.25 G5:.75 F5:.25 D5:1.75 D5:.25 A5:.75 " +
+    "A5:.25 G5:3 A5:.75 A5:.25 C6:2.75 A5:.25 G5:.75 A5:.25 F5:3 A5:.75 A5:.25 G5:.75 F5:.25 D5:1.75 " +
+    "D5:.25 A5:.75 A5:.25 G5:3 R C6 C6 C6 C6:.75 D6:.25 G5:.75 G5:.25 G5:.75 G5:.25 G5:2 G5:.75 G5:.25 " +
+    "G5:.75 G5:.25 G5:2 F5:.75 F5:.25 F5:.75 F5:.25 F5:2 C6 C6 C6 C6:.75 D6:.25 G5:.75 G5:.25 G5:.75 " +
+    "G5:.25 G5:2 G5:.75 G5:.25 G5:.75 G5:.25 G5:2 F5:.75 F5:.25 F5:.75 F5:.25 F5:2"],
+  ["Burgundy Street Blues", "BURGUNDY",
+    "A5:.667 A5:.667 A5:.667 E5:.667 F#5:.667 E5:.667 A4:4 G5:.667 B5:.667 D6:.667 B5:.667 D5:1.333 " +
+    "A5:.444 D5:.444 A5:.444 F#5:4 F#5:.333 F5:.333 E5:.333 D5:.333 A4:4 B4:.333 C5:.333 C#5:.333 D5:.333 " +
+    "B5:.667 G5:1.333 D5:.333 C5:.333 B4:.667 G4:2 D5:.167 B5:2.667 A5:.333 D5:2 R:.167 A5:.444 F#5:.444 " +
+    "D5:.444 A4:4 R:.667 D5:.444 C#5:.444 D5:.444 F#5:.333 A5:.333 C#6:2 A5:.333 B5:.333 E5:2.667 R:.667 " +
+    "E5:.333 F#5:.333 G5:.333 F#5:.333 E5:.333 D5:.333 C#5:.333 E5:.333 A4:1.333 R:.667 B5:.667 A5:.667 " +
+    "F5:.667 F#5:.667 D5:2 F#5:.333 A5:.333 G5:1.333 A5:.667 G5:.667 E5:.667 G5:.667 E5:.667 G5:.667 " +
+    "F#5:2.667 R:4.833 A4:.167 D5:.167 F#5:.167 D6:4 A5:.333 G5:.333 F#5:.333 D5:.333 A4:4 A5:.667 " +
+    "D6:.667 E6:2.667 R:.667 D6:.333 D6:.333 C6:.333 C6:.333 A5:.333 A5:.333 F#5:.333 F#5:.333 D5:.333 " +
+    "D5:.333 A4:2.667 B4:.333 C5:.333 C#5:.333 D5:.333 B5:.667 G5:1.333 D5:.333 C5:.333 B4:.667 G4:2 " +
+    "R:1.333 B5:1.333 G5:1.333 D5:1.333 A5:.444 F#5:.444 D5:.444 A4:4 R:.667 D5:.444 C#5:.444 D5:.444 " +
+    "F#5:.333 A5:.333 C#6:2 A5:.333 B5:.333 E5:2.667 R:.667 E5:.333 F#5:.333 G5:.333 F#5:.333 E5:.333 " +
+    "D5:.333 C#5:.333 E5:.333 A4:1.333 R:.667 B5:.667 A5:.667 F5:.667 F#5:.667 D5:2 F#5:.333 A5:.333 " +
+    "G5:1.333 A5:.667 G5:.667 F#5:2.667 R:1.333 A5:.667 B5:.667 D6:.444 B5:.444 D6:.444 B5:.333 A5:.333 " +
+    "F#5:.333 E5:.333 D5:.333 E5:.333 D5:.333 B4:.333 E5:.333 D5:.333 B4:.333 E5:.333 D5:.333 E5:.333 " +
+    "D5:.333 B4:.333 E5:.333 D5:.333 B4:.333 E5:.333 D5:.333 E5:.333 D5:.333 B4:.333 E5:.333 D5:.333 " +
+    "B4:.333 E5:.333 D5:.333 E5:.333 D5:.333 B4:.333 E5:.333 D5:.333 B4:.333 E5:.333 D5:.333 B4:.333 " +
+    "D5:.667 D5:1.333 E6:4 B5:.333 C6:.333 C#6:.333 D6:.333 B5:.667 G5:1.333 D5:.333 C5:.333 B4:.667 G4:2 " +
+    "R:1.333 B5:1.333 G5:1.333 D5:1.333 A5:.444 F#5:.444 D5:.444 A4:4 R:.667 D5:.444 C#5:.444 D5:.444 " +
+    "F#5:.333 A5:.333 C#6:2 A5:.333 B5:.333 E5:2.667 R:.667 E5:.333 F#5:.333 G5:.333 F#5:.333 E5:.333 " +
+    "D5:.333 C#5:.333 E5:.333 A4:1.333 R:.667 B5:.667 A5:.667 F5:.667 F#5:.667 D5:2 F#5:.333 A5:.333 " +
+    "G5:1.333 A5:.667 G5:.667 F#5:2.667 R:1.333 A5:.667 B5:.667 A5:1.333 A5:1.333 A5:2.667 B5:.667 " +
+    "F#5:.667 D5:.667 A4:2.667 R:.667 A5:.667 F#5:.667 A5:.667 F#5:.667 A5:.667 B5:1.333 A5:.667 C6:.667 " +
+    "A5:.667 F#5:.667 D5:2 D5:.444 E5:.444 D5:.444 C#5:.333 D5:.333 A5:.667 G5:.667 F5:.667 D5:.667 " +
+    "B4:.667 A4:1.333 R:1.333 B5:1.333 G5:1.333 D5:1.333 A5:.444 F#5:.444 D5:.444 A4:4 R:.667 D5:.444 " +
+    "C#5:.444 D5:.444 F#5:.333 A5:.333 C#6:2 A5:.333 B5:.333 E5:2.667 R:.667 E5:.333 F#5:.333 G5:.333 " +
+    "F#5:.333 E5:.333 D5:.333 C#5:.333 E5:.333 A4:1.333 R:.667 B5:.667 A5:.667 F5:.667 F#5:.667 D5:2 " +
+    "F#5:.333 A5:.333 G5:1.333 A5:.667 G5:.667 F#5:2.667 R:.667 A5:.667 A5:.667 A5:.667 F#5:.667 E5:.667 " +
+    "A4:4 G5:.667 B5:.667 D6:.667 B5:.667 D5:1.333 A5:.444 D5:.444 A5:.444 F#5:4 F#5:.333 F5:.333 E5:.333 " +
+    "D5:.333 A4:4 B4:.333 C5:.333 C#5:.333 D5:.333 B5:.667 G5:1.333 D5:.333 C5:.333 B4:.667 G4:2 R:1.333 " +
+    "B5:1.333 G5:1.333 D5:1.333 A5:.444 F#5:.444 D5:.444 A4:4 R:.667 D5:.444 C#5:.444 D5:.444 F#5:.333 " +
+    "A5:.333 C#6:2 A5:.333 B5:.333 E5:2.667 R:.667 E5:.333 F#5:.333 G5:.333 F#5:.333 E5:.333 D5:.333 " +
+    "C#5:2.667 A5:.667 D6:1.333 F#5:.333 B5:.333 A5:1.333 D5:.333 G5:.333 F#5:1.333 A4:.667 C#5:.667 " +
+    "E5:.667 D5:5.333"],
+  ["Refazenda", "REFAZENDA",
+    "A4:.43 B4:.43 D5:.43 D5:.43 D5:.43 A5:.43 A5:.43 A5:.43 A5:.43 A5:.43 A5:.43 B5:.43 A5:.43 A5:.43 " +
+    "A5:.43 A5:.43 A5:.43 G5:.43 F#5:.43 D5:.43 D5:.43 F#5:.43 F#5:.43 F#5:.43 F#5:.43 E5:.43 E5:.43 " +
+    "D5:1.72 R:.43 A4:.43 B4:.43 D5:.43 D5:.43 D5:.43 A5:.43 A5:.43 A5:.43 A5:.43 A5:.43 A5:.43 B5:.43 " +
+    "A5:.43 A5:.43 A5:.43 A5:.43 A5:.43 G5:.43 F#5:.43 D5:.43 D5:.43 F#5:.43 F#5:.43 F#5:.43 F#5:.43 " +
+    "E5:.43 E5:.43 D5:1.72 R:.43 A4:.43 B4:.43 D5:.43 D5:.43 D5:.43 A5:.43 A5:.43 A5:.43 A5:.43 A5:.43 " +
+    "A5:.43 B5:.43 A5:.43 A5:.43 A5:.43 A5:.43 A5:.43 G5:.43 F#5:.43 D5:.43 D5:.43 F#5:.43 F#5:.43 " +
+    "F#5:.43 F#5:.43 E5:.43 E5:.43 D5:1.72 R:.43 A4:.43 B4:.43 D5:.43 D5:.43 D5:.43 A5:.43 A5:.43 A5:.43 " +
+    "A5:.43 A5:.43 A5:.43 B5:.43 A5:.43 A5:.43 A5:.43 A5:.43 A5:.43 G5:.43 F#5:.43 D5:.43 D5:.43 F#5:.43 " +
+    "F#5:.43 F#5:.43 F#5:.43 E5:.43 E5:.43 D5:1.72"],
+];
+/** Efeitos sonoros prontos, no mesmo formato das melodias. */
+const EFFECTS: [string, string, string][] = [
+  ["moeda", "MOEDA", "B5:.25 E6:1"],
+  ["subir", "SUBIR", "C5:.25 E5:.25 G5:.25 C6:.5"],
+  ["descer", "DESCER", "C6:.25 G5:.25 E5:.25 C5:.5"],
+  ["pulo", "PULO", "G4:.125 C5:.125 G5:.25"],
+  ["laser", "LASER", "C7:.125 A6:.125 F6:.125 D6:.125 B5:.125 G5:.125"],
+  ["poder", "PODER", "C5:.125 E5:.125 G5:.125 C6:.125 E6:.125 G6:.125 C7:.5"],
+  ["sirene", "SIRENE", "A5:.5 D6:.5 A5:.5 D6:.5 A5:.5 D6:.5 A5:.5 D6:.5"],
+  ["alarme", "ALARME", "A6:.25 R:.25 A6:.25 R:.25 A6:.25 R:.25 A6:.25 R:.25"],
+  ["erro", "ERRO", "G3:.5 C3:1.5"],
+  ["fim de jogo", "FIM", "G4 F#4 F4 E4:3"],
+  ["vitória", "VITORIA", "C5:.33 E5:.33 G5:.33 C6:1 G5:.5 C6:1.5"],
 ];
 const MELODY_OPTIONS: [string, string][] = MELODIES.map(([label, id]) => [label, id]);
+const EFFECT_OPTIONS: [string, string][] = EFFECTS.map(([label, id]) => [label, id]);
 const somPinoField = { type: "field_number", name: "PIN", value: SOM_PINO, min: 0, max: 48, precision: 1 };
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
@@ -654,8 +712,23 @@ export function defineBlocks(): void {
       nextStatement: null,
       colour: SOUND_COLOUR,
       tooltip:
-        "Toca uma música ou efeito pronto. \"até o fim\": o programa espera a música acabar. " +
+        "Toca uma música pronta. \"até o fim\": o programa espera a música acabar. " +
         "\"em segundo plano\": o programa segue enquanto ela toca.",
+    },
+    {
+      type: "sound_effect",
+      message0: "tocar efeito %1 no pino %2 %3",
+      args0: [
+        { type: "field_dropdown", name: "MELODY", options: EFFECT_OPTIONS },
+        somPinoField,
+        { type: "field_dropdown", name: "MODE", options: [["até o fim", "FIM"], ["em segundo plano", "FUNDO"]] },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: SOUND_COLOUR,
+      tooltip:
+        "Toca um efeito sonoro curto (moeda, pulo, laser…). \"até o fim\": o programa espera o efeito acabar. " +
+        "\"em segundo plano\": o programa segue enquanto ele toca.",
     },
     {
       type: "forever",
@@ -855,6 +928,7 @@ export function defineBlocks(): void {
   pythonGenerator.forBlock["sound_stop"] = (block) => `som_parar(${somPino(block)})\n`;
   pythonGenerator.forBlock["sound_melody"] = (block) =>
     `som_melodia(${somPino(block)}, '${block.getFieldValue("MELODY")}', ${block.getFieldValue("MODE") === "FUNDO" ? "True" : "False"})\n`;
+  pythonGenerator.forBlock["sound_effect"] = pythonGenerator.forBlock["sound_melody"];
   pythonGenerator.forBlock["sound_compose"] = (block) =>
     `som_tocar(${somPino(block)}, '${(block as ComposeBlock).notas}', ${block.getFieldValue("MODE") === "FUNDO" ? "True" : "False"})\n`;
 
@@ -1620,9 +1694,9 @@ function keysRuntimeCode(): string {
 /** Som: notas, frequências e melodias num buzzer passivo (PWM na frequência da nota). */
 function soundCode(workspace: Blockly.Workspace): string {
   const usadas = new Set(
-    programBlocks(workspace).filter((b) => b.type === "sound_melody").map((b) => b.getFieldValue("MELODY")),
+    programBlocks(workspace).filter((b) => b.type === "sound_melody" || b.type === "sound_effect").map((b) => b.getFieldValue("MELODY")),
   );
-  const melodias = MELODIES.filter(([, id]) => usadas.has(id));
+  const melodias = [...MELODIES, ...EFFECTS].filter(([, id]) => usadas.has(id));
   return [
     "# --- som (buzzer passivo: o PWM na frequencia da nota faz ele vibrar) ---",
     "_som_bpm = 120  # batidas por minuto (bloco 'ritmo')",
@@ -3597,6 +3671,7 @@ export const toolbox = {
         { kind: "block", type: "sound_note", fields: { NOTE: "0", OCTAVE: "4", BEATS: "1" } },
         { kind: "block", type: "sound_rest" },
         { kind: "block", type: "sound_melody" },
+        { kind: "block", type: "sound_effect" },
         { kind: "block", type: "sound_compose" },
         {
           kind: "block",
