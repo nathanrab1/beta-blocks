@@ -22,8 +22,9 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return; // Google Drive etc.: direto na rede
 
   // Páginas: rede primeiro (pega a versão nova logo depois de publicar); sem internet, a guardada.
+  // "no-cache": confere com o servidor em vez de usar a cópia de até 10 min do GitHub Pages.
   if (req.mode === "navigate") {
-    e.respondWith(fetch(req).catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r ?? caches.match("./"))));
+    e.respondWith(fetch(req, { cache: "no-cache" }).catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r ?? caches.match("./"))));
     return;
   }
 
