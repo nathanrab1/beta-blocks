@@ -73,9 +73,11 @@ function renderReadings(values: Record<string, number>) {
       const card = document.createElement("div");
       card.className = "reading";
       const port = document.createElement("small");
-      port.textContent = `porta ${k.slice(1)}`;
+      const sensor = k[0] === "t" ? "temperatura, " : k[0] === "h" ? "umidade, " : "";
+      port.textContent = `${sensor}porta ${k.slice(1)}`;
       const value = document.createElement("b");
-      value.textContent = k[0] === "a" ? `${v}%` : v ? "ligada" : "desligada";
+      value.textContent =
+        k[0] === "t" ? `${v} °C` : k[0] === "a" || k[0] === "h" ? `${v}%` : v ? "ligada" : "desligada";
       card.append(port, value);
       return card;
     }),

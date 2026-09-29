@@ -608,12 +608,12 @@ if (driveConfigured()) {
 // ---------- entradas ao vivo ----------
 const monitorPanel = $("monitor-panel");
 const monitorCards = $("monitor-cards");
-let monitoredPins: InputPins = { analog: [], digital: [] };
+let monitoredPins: InputPins = { analog: [], digital: [], dht: [] };
 let monitorMode: "program" | "repl" | null = null; // de onde vêm os valores
 let lastMonitorAt = 0;
 
 function pinsKey(p: InputPins) {
-  return `a:${p.analog.join(",")}|d:${p.digital.join(",")}`;
+  return `a:${p.analog.join(",")}|d:${p.digital.join(",")}|t:${p.dht.join(",")}`;
 }
 
 /** Cria (se preciso) o cartão de uma porta que está mandando valores. */
@@ -624,13 +624,18 @@ function ensureCard(key: string): HTMLElement {
   card.className = "mcard";
   card.dataset.key = key;
   const n = key.slice(1);
-  card.innerHTML = key.startsWith("a")
-    ? `<span class="mlabel">Porta ${n}</span><span class="mbar"><i></i></span><span class="mvalue">—</span>`
-    : `<span class="mlabel">Porta ${n}</span><span class="mdot"></span><span class="mvalue">—</span>`;
-  // mantém os cartões em ordem: analógicas primeiro, depois por número
+  // a = analógica (barra), d = digital (bolinha), t/h = temperatura/umidade do DHT11 (só o número)
+  card.innerHTML =
+    key[0] === "a"
+      ? `<span class="mlabel">Porta ${n}</span><span class="mbar"><i></i></span><span class="mvalue">—</span>`
+      : key[0] === "d"
+        ? `<span class="mlabel">Porta ${n}</span><span class="mdot"></span><span class="mvalue">—</span>`
+        : `<span class="mlabel">${key[0] === "t" ? "Temperatura" : "Umidade"} (porta ${n})</span><span></span><span class="mvalue">—</span>`;
+  // mantém os cartões em ordem: analógicas, digitais, DHT11; depois por número
+  const ORDEM = "adth";
   const cards = [...monitorCards.querySelectorAll<HTMLElement>(".mcard"), card].sort((a, b) => {
     const ka = a.dataset.key!, kb = b.dataset.key!;
-    return ka[0] !== kb[0] ? (ka[0] === "a" ? -1 : 1) : Number(ka.slice(1)) - Number(kb.slice(1));
+    return ka[0] !== kb[0] ? ORDEM.indexOf(ka[0]) - ORDEM.indexOf(kb[0]) : Number(ka.slice(1)) - Number(kb.slice(1));
   });
   monitorCards.replaceChildren(...cards);
   return card;
@@ -719,6 +724,10 @@ function applyMonitorValues(values: Record<string, number>) {
     if (key.startsWith("a")) {
       (card.querySelector(".mbar > i") as HTMLElement).style.width = `${v}%`;
       card.querySelector(".mvalue")!.textContent = `${v}%`;
+    } else if (key.startsWith("t")) {
+      card.querySelector(".mvalue")!.textContent = `${v} °C`;
+    } else if (key.startsWith("h")) {
+      card.querySelector(".mvalue")!.textContent = `${v}%`;
     } else {
       card.classList.toggle("on", v === 1);
       card.querySelector(".mvalue")!.textContent = v === 1 ? "ligada" : "desligada";
@@ -784,7 +793,7 @@ async function stopAndReset() {
   else await board.execSnippet(resetBoardCode(currentPin()));
   monitorMode = null;
   clearDisplayPreview();
-  if (board.transport !== "ble" && monitoredPins.analog.length + monitoredPins.digital.length > 0) {
+  if (board.transport !== "ble" && monitoredPins.analog.length + monitoredPins.digital.length + monitoredPins.dht.length > 0) {
     await startReplMonitor();
   }
 }

@@ -405,6 +405,19 @@ export function defineBlocks(): void {
       tooltip: "Lê um valor analógico (potenciômetro, LDR…) de 0 a 100%. Só portas 1 a 20.",
     },
     {
+      type: "input_dht",
+      message0: "%1 do DHT11 porta %2",
+      args0: [
+        { type: "field_dropdown", name: "WHAT", options: [["temperatura (°C)", "T"], ["umidade (%)", "H"]] },
+        { type: "field_number", name: "PIN", value: 3, min: 0, max: 48, precision: 1 },
+      ],
+      output: "Number",
+      colour: INPUT_COLOUR,
+      tooltip:
+        "Lê o sensor DHT11 ligado nessa porta (fio de dados; + no 3,3 V e − no GND): temperatura em °C ou " +
+        "umidade do ar em %. O sensor mede a cada 2 s; entre uma medida e outra vale a última.",
+    },
+    {
       type: "input_if",
       message0: "se a porta %1 estiver %2 %3 faça %4",
       args0: [
@@ -971,6 +984,10 @@ export function defineBlocks(): void {
     return [`porta_analogica(${block.getFieldValue("PIN")})`, Order.FUNCTION_CALL];
   };
 
+  pythonGenerator.forBlock["input_dht"] = (block) => {
+    return [`dht_ler(${block.getFieldValue("PIN")}, '${block.getFieldValue("WHAT")}')`, Order.FUNCTION_CALL];
+  };
+
   const inputCondition = (block: Blockly.Block) => {
     const pin = block.getFieldValue("PIN");
     return block.getFieldValue("STATE") === "ON" ? `porta_ler(${pin})` : `not porta_ler(${pin})`;
@@ -1527,6 +1544,30 @@ export function preamble(pin: number): string {
     "        antes = _adc_saida[n] = round(v)",
     "    return antes",
     "",
+    "# sensor DHT11: mede no maximo a cada 2 s (mais rapido ele nao responde); entre uma",
+    "# medida e outra devolve a ultima. Se a medida falhar (fio solto), fica a anterior.",
+    "_dhts = {}  # porta -> [sensor, ms da ultima medida, temperatura, umidade]",
+    "",
+    "def dht_medir(n):",
+    "    d = _dhts.get(n)",
+    "    if d is None:",
+    "        import dht",
+    "        d = _dhts[n] = [dht.DHT11(Pin(n)), None, None, None]",
+    "    agora = time.ticks_ms()",
+    "    if d[1] is None or time.ticks_diff(agora, d[1]) >= 2000:",
+    "        d[1] = agora",
+    "        try:",
+    "            d[0].measure()",
+    "            d[2] = d[0].temperature()",
+    "            d[3] = d[0].humidity()",
+    "        except OSError:",
+    "            pass",
+    "    return d",
+    "",
+    "def dht_ler(n, qual):",
+    "    v = dht_medir(n)[2 if qual == 'T' else 3]",
+    "    return 0 if v is None else v",
+    "",
     "",
   ].join("\n");
 }
@@ -2005,25 +2046,28 @@ export function programBlocks(workspace: Blockly.Workspace): Blockly.Block[] {
 export interface InputPins {
   analog: number[];
   digital: number[];
+  dht: number[];
 }
 
 /** Portas usadas por blocos de entrada no workspace (sem repetição, ordenadas). */
 export function collectInputPins(workspace: Blockly.Workspace): InputPins {
   const analog = new Set<number>();
   const digital = new Set<number>();
+  const dht = new Set<number>();
   for (const block of programBlocks(workspace)) {
     if (block.isInsertionMarker()) continue;
     const pin = Number(block.getFieldValue("PIN"));
     if (!Number.isFinite(pin)) continue;
     if (["input_analog", "event_threshold", "oled_breakout", "oled_pong_cpu", "oled_pong_2", "oled_invasores"].includes(block.type)) analog.add(pin);
     else if (["input_digital", "input_if", "input_ifelse", "event_button"].includes(block.type)) digital.add(pin);
+    else if (block.type === "input_dht") dht.add(pin);
   }
   // o Pong para dois tem a segunda raquete em outra porta
   for (const block of programBlocks(workspace)) {
     if (block.type === "oled_pong_2" && !block.isInsertionMarker()) analog.add(Number(block.getFieldValue("PIN2")));
   }
   const sort = (a: Set<number>) => [...a].sort((x, y) => x - y);
-  return { analog: sort(analog), digital: sort(digital) };
+  return { analog: sort(analog), digital: sort(digital), dht: sort(dht) };
 }
 
 /** Marca que inicia uma linha de monitor na serial (filtrada do console). */
@@ -2034,12 +2078,13 @@ export const MONITOR_MARK = "\x1e";
  * em segundo plano (Timer), sem atrapalhar o programa principal.
  */
 export function monitorCode(pins: InputPins): string {
-  if (pins.analog.length === 0 && pins.digital.length === 0) return "";
+  if (pins.analog.length + pins.digital.length + pins.dht.length === 0) return "";
   return [
     "# --- monitor de entradas do Beta Blocks ---",
     "import json",
     `_mon_a = [${pins.analog.join(", ")}]`,
     `_mon_d = [${pins.digital.join(", ")}]`,
+    `_mon_t = [${pins.dht.join(", ")}]  # DHT11: t = temperatura, h = umidade`,
     "",
     "def _monitor(t):",
     "    v = {}",
@@ -2047,6 +2092,11 @@ export function monitorCode(pins: InputPins): string {
     "        v['a%d' % n] = porta_analogica(n)",
     "    for n in _mon_d:",
     "        v['d%d' % n] = 1 if porta_ler(n) else 0",
+    "    for n in _mon_t:",
+    "        d = dht_medir(n)",
+    "        if d[2] is not None:  # ainda sem medida boa: nao mostra",
+    "            v['t%d' % n] = d[2]",
+    "            v['h%d' % n] = d[3]",
     "    s = json.dumps(v)",
     "    print('\\x1e' + s)",
     "    try:",
@@ -3717,6 +3767,7 @@ export const toolbox = {
         { kind: "block", type: "event_threshold" },
         { kind: "block", type: "input_analog" },
         { kind: "block", type: "input_digital" },
+        { kind: "block", type: "input_dht" },
       ],
     },
     {
