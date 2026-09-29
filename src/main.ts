@@ -43,6 +43,11 @@ import { workspaceThumbnail } from "./thumbnail";
 
 const STORAGE_KEY = "betablocks.workspace";
 
+// App instalável (PWA) e sem internet: o sw.js só existe no build (vite.config.ts).
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
+
 // ---------- elementos ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const btnConnect = $<HTMLButtonElement>("btn-connect");
