@@ -16,6 +16,7 @@ import {
   eventKeys,
   gameKeys,
   oledCode,
+  RENDERER,
   type InputPins,
 } from "./blocks/betablocks";
 import ssd1306Source from "./lib/ssd1306.py?raw";
@@ -98,7 +99,7 @@ const escala = () => (compacto.matches ? 0.65 : 0.9);
 
 const workspace = Blockly.inject("blockly-div", {
   toolbox,
-  renderer: "zelos",
+  renderer: RENDERER,
   grid: { spacing: 24, length: 3, colour: "#e3e6eb", snap: true },
   zoom: { controls: true, wheel: true, startScale: escala() },
   trashcan: true,

@@ -11,6 +11,7 @@ const INPUT_COLOUR = 160;
 const OLED_COLOUR = 260;
 const GAME_COLOUR = 330;
 const TEXT_COLOUR = 70;
+const MATH_COLOUR = 230;
 const RADIO_COLOUR = "#d6268f";
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
@@ -40,7 +41,31 @@ export const KEY_OPTIONS: [string, string][] = [
 /** Marca de uma tecla enviada pela serial: "\x1d<nome>\n". */
 export const KEY_MARK = "\x1d";
 
+/** Blocos em que o rótulo fica colado no balão do número (ex.: "LED r[ ] g[ ] b[ ]"). */
+const COLADOS = new Set(["led_rgb_pct"]);
+
+/** O zelos coloca um espaço fixo entre rótulo e campo; nos blocos COLADOS ele quase some. */
+class BetaRenderInfo extends Blockly.zelos.RenderInfo {
+  override getInRowSpacing_(prev: Blockly.blockRendering.Measurable | null, next: Blockly.blockRendering.Measurable | null) {
+    const T = Blockly.blockRendering.Types;
+    if (COLADOS.has(this.block_.type) && prev && next && T.isField(prev) && T.isInlineInput(next)) return 2;
+    return super.getInRowSpacing_(prev, next);
+  }
+}
+
+class BetaRenderer extends Blockly.zelos.Renderer {
+  protected override makeRenderInfo_(block: Blockly.BlockSvg) {
+    return new BetaRenderInfo(this, block);
+  }
+}
+
+/** Nome do renderizador do app (o zelos com o ajuste acima). */
+export const RENDERER = "betablocks";
+
 export function defineBlocks(): void {
+  if (!Blockly.registry.hasItem(Blockly.registry.Type.RENDERER, RENDERER)) {
+    Blockly.blockRendering.register(RENDERER, BetaRenderer);
+  }
   // "ao receber número = ...": o campo aceita só um número (vírgula vira ponto) ou vazio
   if (!Blockly.Extensions.isRegistered("radio_number_filter")) {
     Blockly.Extensions.register("radio_number_filter", function (this: Blockly.Block) {
@@ -58,6 +83,49 @@ export function defineBlocks(): void {
       hat: "cap",
       colour: EVENT_COLOUR,
       tooltip: "Tudo que estiver pendurado aqui roda quando a placa liga. Blocos soltos não rodam.",
+    },
+    {
+      type: "event_button",
+      message0: "quando clicar botão %1",
+      args0: [{ type: "field_number", name: "PIN", value: 1, min: 0, max: 48, precision: 1 }],
+      nextStatement: null,
+      hat: "cap",
+      colour: INPUT_COLOUR,
+      tooltip:
+        "Roda os blocos pendurados quando o botão ligado nessa porta é apertado (botão entre a porta e o 3,3 V). " +
+        "Segurar apertado não repete.",
+    },
+    {
+      type: "event_threshold",
+      message0: "quando valor porta %1 passar de %2",
+      args0: [
+        { type: "field_number", name: "PIN", value: 1, min: 1, max: 20, precision: 1 },
+        { type: "field_number", name: "LIMIT", value: 50, min: 0, max: 100, precision: 1 },
+      ],
+      nextStatement: null,
+      hat: "cap",
+      colour: INPUT_COLOUR,
+      tooltip:
+        "Roda os blocos pendurados quando o valor da porta (0 a 100%) sobe e passa do número escolhido " +
+        "(ex.: o LDR recebendo luz). Só roda de novo depois que o valor descer um pouco abaixo do número.",
+    },
+    {
+      type: "math_convert",
+      // FROM_MIN/FROM_MAX vieram depois: nos blocos antigos ficam vazios e valem 0 e 100
+      message0: "converter %1 de %2 %3 para %4 %5",
+      args0: [
+        { type: "input_value", name: "VALUE", check: "Number" },
+        { type: "input_value", name: "FROM_MIN", check: "Number" },
+        { type: "input_value", name: "FROM_MAX", check: "Number" },
+        { type: "input_value", name: "MIN", check: "Number" },
+        { type: "input_value", name: "MAX", check: "Number" },
+      ],
+      inputsInline: true,
+      output: "Number",
+      colour: MATH_COLOUR,
+      tooltip:
+        "Muda um valor de uma faixa para outra. Ex.: de 0–100 para 100–0 inverte (mais luz no sensor, " +
+        "menos luz no LED); de 0–100 para 0–10 vira uma nota. Valores fora da primeira faixa ficam no limite.",
     },
     {
       type: "event_key",
@@ -81,6 +149,23 @@ export function defineBlocks(): void {
       nextStatement: null,
       colour: LED_COLOUR,
       tooltip: "Acende o LED RGB (vermelho na porta 4, verde na 5, azul na 6) com a intensidade de cada cor (0 a 255).",
+    },
+    // o de cima (0 a 255) saiu do menu, mas continua funcionando nos projetos antigos
+    {
+      type: "led_rgb_pct",
+      message0: "LED r %1 g %2 b %3",
+      args0: [
+        { type: "input_value", name: "R", check: "Number" },
+        { type: "input_value", name: "G", check: "Number" },
+        { type: "input_value", name: "B", check: "Number" },
+      ],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: LED_COLOUR,
+      tooltip:
+        "Acende o LED RGB com a intensidade de cada cor, de 0 a 100% (a mesma medida do 'valor porta' e das saídas): " +
+        "r = vermelho (porta 4), g = verde (porta 5), b = azul (porta 6).",
     },
     {
       type: "led_color",
@@ -169,7 +254,7 @@ export function defineBlocks(): void {
     },
     {
       type: "input_digital",
-      message0: "porta %1 está ligada?",
+      message0: "porta %1 está ligada",
       args0: [{ type: "field_number", name: "PIN", value: 1, min: 0, max: 48, precision: 1 }],
       output: "Boolean",
       colour: INPUT_COLOUR,
@@ -177,11 +262,11 @@ export function defineBlocks(): void {
     },
     {
       type: "input_analog",
-      message0: "ler porta %1 (0 a 100%%)",
+      message0: "valor porta %1",
       args0: [{ type: "field_number", name: "PIN", value: 1, min: 1, max: 20, precision: 1 }],
       output: "Number",
       colour: INPUT_COLOUR,
-      tooltip: "Lê um valor analógico (potenciômetro, LDR…) como porcentagem. Só portas 1 a 20.",
+      tooltip: "Lê um valor analógico (potenciômetro, LDR…) de 0 a 100%. Só portas 1 a 20.",
     },
     {
       type: "input_if",
@@ -439,12 +524,40 @@ export function defineBlocks(): void {
 
   pythonGenerator.forBlock["event_start"] = () => "";
   pythonGenerator.forBlock["event_key"] = () => "";
+  pythonGenerator.forBlock["event_button"] = () => "";
+  pythonGenerator.forBlock["event_threshold"] = () => "";
+
+  pythonGenerator.forBlock["math_convert"] = (block, gen) => {
+    const v = gen.valueToCode(block, "VALUE", Order.NONE) || "0";
+    const de = gen.valueToCode(block, "FROM_MIN", Order.NONE) || "0";
+    const ate = gen.valueToCode(block, "FROM_MAX", Order.NONE) || "100";
+    const a = gen.valueToCode(block, "MIN", Order.NONE) || "0";
+    const b = gen.valueToCode(block, "MAX", Order.NONE) || "0";
+    const f = gen.provideFunction_("converter", [
+      "# de de..ate para a..b; fora de de..ate fica no limite; com a e b inteiros, o resultado",
+      "# tambem e inteiro (bom para o LED)",
+      `def ${gen.FUNCTION_NAME_PLACEHOLDER_}(v, de, ate, a, b):`,
+      "  if ate == de:",
+      "    return a",
+      "  t = max(0, min(1, (v - de) / (ate - de)))",
+      "  r = a + (b - a) * t",
+      "  return round(r) if a == int(a) and b == int(b) else r",
+    ]);
+    return [`${f}(${v}, ${de}, ${ate}, ${a}, ${b})`, Order.FUNCTION_CALL];
+  };
 
   pythonGenerator.forBlock["led_rgb"] = (block, gen) => {
     const r = gen.valueToCode(block, "R", Order.NONE) || "0";
     const g = gen.valueToCode(block, "G", Order.NONE) || "0";
     const b = gen.valueToCode(block, "B", Order.NONE) || "0";
     return `led_rgb(${r}, ${g}, ${b})\n`;
+  };
+
+  pythonGenerator.forBlock["led_rgb_pct"] = (block, gen) => {
+    const r = gen.valueToCode(block, "R", Order.NONE) || "0";
+    const g = gen.valueToCode(block, "G", Order.NONE) || "0";
+    const b = gen.valueToCode(block, "B", Order.NONE) || "0";
+    return `led_pct(${r}, ${g}, ${b})\n`;
   };
 
   pythonGenerator.forBlock["led_color"] = (block) => {
@@ -821,6 +934,7 @@ export function preamble(pin: number): string {
     "_bb_na_fila = None  # chave do evento da fila que esta rodando",
     "_bb_cortar = False",
     "_bb_ler_radio = None  # le as mensagens que chegaram (so com blocos de radio)",
+    "_bb_ler_entradas = None  # confere botoes e limites dos blocos 'quando clicar botao' e 'passar de'",
     "",
     "def _bb_rodar_fila():",
     "    global _bb_na_fila, _bb_cortar",
@@ -861,6 +975,8 @@ export function preamble(pin: number): string {
     "        time.sleep_ms(1)",
     "        if _bb_ler_radio:",
     "            _bb_ler_radio()",
+    "        if _bb_ler_entradas:",
+    "            _bb_ler_entradas()",
     "    if _bb_na_fila is not None:",
     "        if _bb_cortar or _bb_pendente is not None:",
     "            raise _BBInterrompe()",
@@ -891,6 +1007,9 @@ export function preamble(pin: number): string {
     "        if n not in _pwms:",
     "            _pwms[n] = PWM(Pin(n), freq=1000)",
     "        _pwms[n].duty_u16(v * 65535 // 255)",
+    "",
+    "def led_pct(r, g, b):  # bloco 'acender LED' de 0 a 100%",
+    "    led_rgb(r * 255 / 100, g * 255 / 100, b * 255 / 100)",
     "",
     "led_rgb(0, 0, 0)  # comeca sempre com o LED apagado",
     "",
@@ -939,7 +1058,7 @@ export function preamble(pin: number): string {
 /** Chapéus "ao receber ... pelo rádio" e o tipo de mensagem de cada um. */
 const RADIO_HATS: Record<string, string> = { radio_on_number: "n", radio_on_value: "v", radio_on_text: "t" };
 
-const HAT_TYPES = ["event_start", "event_key", ...Object.keys(RADIO_HATS)];
+const HAT_TYPES = ["event_start", "event_key", "event_button", "event_threshold", ...Object.keys(RADIO_HATS)];
 
 /** Teclas usadas pelos blocos "quando apertar a tecla". */
 export function eventKeys(workspace: Blockly.Workspace): Set<string> {
@@ -960,6 +1079,9 @@ export function programCode(workspace: Blockly.Workspace): string {
   if (keyHats.length > 0 || jogos) code += keysRuntimeCode();
   if (jogos) code += gamesCode(workspace);
   const radioHats = tops.filter((b) => b.type in RADIO_HATS);
+  const buttonHats = tops.filter((b) => b.type === "event_button");
+  const thresholdHats = tops.filter((b) => b.type === "event_threshold");
+  if (buttonHats.length > 0 || thresholdHats.length > 0) code += inputsRuntimeCode();
   if (usesRadio(workspace)) code += radioCode();
   keyHats.forEach((hat, i) => {
     const next = hat.getNextBlock();
@@ -968,6 +1090,27 @@ export function programCode(workspace: Blockly.Workspace): string {
     const key = hat.getFieldValue("KEY");
     code += `def _tecla_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
     code += `_teclas[${JSON.stringify(key)}] = _bb_evento(_tecla_${i})\n\n`;
+  });
+
+  // "quando clicar botão": cada pilha vira um evento ligado à porta do botão
+  buttonHats.forEach((hat, i) => {
+    const next = hat.getNextBlock();
+    let body = next ? pythonGenerator.blockToCode(next) : "";
+    if (Array.isArray(body)) body = body[0];
+    const pin = Math.round(Number(hat.getFieldValue("PIN")) || 0);
+    code += `def _botao_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
+    code += `_botoes.append((${pin}, _bb_evento(_botao_${i})))\n\n`;
+  });
+
+  // "quando valor porta passar de": cada pilha vira um evento ligado à porta e ao limite
+  thresholdHats.forEach((hat, i) => {
+    const next = hat.getNextBlock();
+    let body = next ? pythonGenerator.blockToCode(next) : "";
+    if (Array.isArray(body)) body = body[0];
+    const pin = Math.round(Number(hat.getFieldValue("PIN")) || 0);
+    const limite = Math.min(100, Math.max(0, Number(hat.getFieldValue("LIMIT")) || 0));
+    code += `def _limite_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
+    code += `_limite_novo(${pin}, ${limite}, _bb_evento(_limite_${i}))\n\n`;
   });
 
   // "ao receber ... pelo rádio": cada pilha vira uma função da lista do seu tipo de mensagem
@@ -996,11 +1139,50 @@ export function programCode(workspace: Blockly.Workspace): string {
     if (c) code += c;
   }
 
-  // com teclas ou rádio, o programa precisa continuar vivo para receber os eventos
-  if (keyHats.length > 0 || radioHats.length > 0) {
+  // com teclas, botões ou rádio, o programa precisa continuar vivo para receber os eventos
+  if (keyHats.length > 0 || buttonHats.length > 0 || thresholdHats.length > 0 || radioHats.length > 0) {
     code += "\n# roda os eventos que chegarem\nwhile True:\n    _bb_ponto()\n    time.sleep_ms(20)\n";
   }
   return pythonGenerator.finish(code);
+}
+
+/**
+ * Entradas dos chapéus "quando clicar botão" e "quando valor porta passar de",
+ * conferidas no _bb_ponto() a cada ~20 ms.
+ * - botão: dispara quando passa de solto para apertado (a leitura a cada 20 ms já
+ *   filtra o tremido do contato); se já estava apertado no começo, não conta.
+ * - limite: dispara quando o valor sobe e passa do limite; só se arma de novo quando
+ *   o valor desce 3% abaixo dele (o ruído do sensor perto do limite não dispara de novo).
+ *   Se já estava acima no começo, não conta.
+ */
+function inputsRuntimeCode(): string {
+  return [
+    "# --- entradas ('quando clicar botao', 'quando valor porta passar de') ---",
+    "_botoes = []  # (porta, evento)",
+    "_botoes_antes = {}  # porta -> estava apertado na ultima leitura",
+    "_limites = []  # [porta, limite, evento, armado]",
+    "",
+    "def _limite_novo(n, limite, evento):",
+    "    _limites.append([n, limite, evento, porta_analogica(n) <= limite])",
+    "",
+    "def _ler_entradas():",
+    "    for n, evento in _botoes:",
+    "        agora = porta_ler(n)",
+    "        if agora and not _botoes_antes.get(n, True):",
+    "            evento()",
+    "        _botoes_antes[n] = agora",
+    "    for l in _limites:",
+    "        v = porta_analogica(l[0])",
+    "        if l[3] and v > l[1]:",
+    "            l[3] = False",
+    "            l[2]()",
+    "        elif not l[3] and v <= l[1] - 3:",
+    "            l[3] = True",
+    "",
+    "_bb_ler_entradas = _ler_entradas",
+    "",
+    "",
+  ].join("\n");
 }
 
 /** Leitor de teclas: um timer lê a serial e chama a função da tecla recebida. */
@@ -1215,8 +1397,8 @@ export function collectInputPins(workspace: Blockly.Workspace): InputPins {
     if (block.isInsertionMarker()) continue;
     const pin = Number(block.getFieldValue("PIN"));
     if (!Number.isFinite(pin)) continue;
-    if (block.type === "input_analog") analog.add(pin);
-    else if (block.type === "input_digital" || block.type === "input_if" || block.type === "input_ifelse") digital.add(pin);
+    if (block.type === "input_analog" || block.type === "event_threshold") analog.add(pin);
+    else if (["input_digital", "input_if", "input_ifelse", "event_button"].includes(block.type)) digital.add(pin);
   }
   const sort = (a: Set<number>) => [...a].sort((x, y) => x - y);
   return { analog: sort(analog), digital: sort(digital) };
@@ -1924,13 +2106,25 @@ export function oledCode(): string {
     "    pingo = [(_LOGO_PINGO[i], _LOGO_PINGO[i + 1]) for i in range(0, len(_LOGO_PINGO), 2)]",
     "    for x, y in pingo:",
     "        fb.pixel(x, y, 0)",
+    "    # LED azul (porta 6) acompanha a animacao pelo relogio: acende na entrada, fica ligado",
+    "    # com a palavra e apaga junto com ela. A potencia vai ao quadrado para o brilho parecer",
+    "    # subir e descer por igual (o olho ve os primeiros passos como um salto grande).",
+    "    def azul(f):",
+    "        f = max(0, min(1, f))",
+    "        led_rgb(0, 0, 255 * f * f)",
+    "    ENTRADA = 1300  # ms: as letras e o pingo; o azul chega a 100% junto com o logo completo",
+    "    def esperar_acendendo(ms):",
+    "        fim = time.ticks_add(time.ticks_ms(), ms)",
+    "        while time.ticks_diff(fim, time.ticks_ms()) > 0:",
+    "            azul(time.ticks_diff(time.ticks_ms(), t0) / ENTRADA)",
+    "            _bb_esperar(10)",
     "    # 1) as letras aparecem uma a uma",
     "    oled.fill(0)",
     "    for fim in _LOGO_LETRAS:",
     "        for p in range(8):",
     "            tela[p * W:p * W + fim] = letras[p * W:p * W + fim]",
     "        _visor_mostrar()",
-    "        _bb_esperar(130)",
+    "        esperar_acendendo(130)",
     "    # 2) o pingo cai do alto e quica ate parar em cima do i",
     "    dy = -(min(y for x, y in pingo) + 8.0)  # comeca acima da tela",
     "    vy = 0.0",
@@ -1949,9 +2143,10 @@ export function oledCode(): string {
     "        for x, y in pingo:",
     "            oled.pixel(x, y + d, 1)",
     "        _visor_mostrar()",
-    "        _bb_esperar(33)",
+    "        esperar_acendendo(33)",
     "    tela[:] = cheio",
     "    _visor_mostrar()",
+    "    azul(1)  # logo completo: azul ligado enquanto a palavra fica na tela",
     "    # 3) parado ate completar 4 s; antes, sorteia a ordem em que os pixels vao sumir",
     "    acesos = []",
     "    for i in range(len(cheio)):",
@@ -1971,13 +2166,16 @@ export function oledCode(): string {
     "    n = len(acesos)",
     "    feitos = 0",
     "    while feitos < n:",
-    "        alvo = min(n, n * time.ticks_diff(time.ticks_ms(), ini) // 1000)",
+    "        passou = time.ticks_diff(time.ticks_ms(), ini)",
+    "        azul(1 - passou / 1000)  # o azul apaga junto com a palavra",
+    "        alvo = min(n, n * passou // 1000)",
     "        if alvo > feitos:",
     "            for x, y in acesos[feitos:alvo]:",
     "                oled.pixel(x, y, 0)",
     "            feitos = alvo",
     "            _visor_mostrar()",
     "        _bb_esperar(10)",
+    "    azul(0)",
     "    oled.fill(0)",
     "    _visor_mostrar()",
     "    # 5) 1 s com a tela apagada, e ai o projeto comeca",
@@ -2008,9 +2206,9 @@ export const toolbox = {
       contents: [
         {
           kind: "block",
-          type: "led_rgb",
+          type: "led_rgb_pct",
           inputs: {
-            R: { shadow: { type: "math_number", fields: { NUM: 255 } } },
+            R: { shadow: { type: "math_number", fields: { NUM: 100 } } },
             G: { shadow: { type: "math_number", fields: { NUM: 0 } } },
             B: { shadow: { type: "math_number", fields: { NUM: 0 } } },
           },
@@ -2049,11 +2247,12 @@ export const toolbox = {
       name: "Entradas",
       colour: INPUT_COLOUR,
       contents: [
-        { kind: "block", type: "input_if" },
-        { kind: "block", type: "input_ifelse" },
-        { kind: "block", type: "input_digital" },
+        // "se a porta...", "se/senão" e "mostrar" saíram do menu, mas continuam
+        // funcionando nos projetos que já os usam
+        { kind: "block", type: "event_button" },
+        { kind: "block", type: "event_threshold" },
         { kind: "block", type: "input_analog" },
-        { kind: "block", type: "show_value" },
+        { kind: "block", type: "input_digital" },
       ],
     },
     {
@@ -2171,31 +2370,47 @@ export const toolbox = {
         },
       ],
     },
+    {
+      kind: "category",
+      name: "Matemática",
+      colour: MATH_COLOUR,
+      contents: [
+        {
+          kind: "block",
+          type: "math_convert",
+          inputs: {
+            VALUE: { shadow: { type: "math_number", fields: { NUM: 50 } } },
+            FROM_MIN: { shadow: { type: "math_number", fields: { NUM: 0 } } },
+            FROM_MAX: { shadow: { type: "math_number", fields: { NUM: 100 } } },
+            MIN: { shadow: { type: "math_number", fields: { NUM: 100 } } },
+            MAX: { shadow: { type: "math_number", fields: { NUM: 0 } } },
+          },
+        },
+        { kind: "block", type: "math_number" },
+        {
+          kind: "block",
+          type: "math_arithmetic",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "math_random_int",
+          inputs: {
+            FROM: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+            TO: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "math_round",
+          inputs: { NUM: { shadow: { type: "math_number", fields: { NUM: 3.1 } } } },
+        },
+      ],
+    },
     // Categorias desativadas por enquanto (descomente para reativar):
-    // {
-    //   kind: "category",
-    //   name: "Matemática",
-    //   colour: 230,
-    //   contents: [
-    //     { kind: "block", type: "math_number" },
-    //     {
-    //       kind: "block",
-    //       type: "math_arithmetic",
-    //       inputs: {
-    //         A: { shadow: { type: "math_number", fields: { NUM: 1 } } },
-    //         B: { shadow: { type: "math_number", fields: { NUM: 1 } } },
-    //       },
-    //     },
-    //     {
-    //       kind: "block",
-    //       type: "math_random_int",
-    //       inputs: {
-    //         FROM: { shadow: { type: "math_number", fields: { NUM: 0 } } },
-    //         TO: { shadow: { type: "math_number", fields: { NUM: 255 } } },
-    //       },
-    //     },
-    //   ],
-    // },
     // { kind: "category", name: "Variáveis", colour: 330, custom: "VARIABLE" },
   ],
 };
@@ -2233,11 +2448,11 @@ export const starterWorkspace = {
                           inputs: { TIME: { shadow: { type: "math_number", fields: { NUM: 500 } } } },
                           next: {
                             block: {
-                              type: "led_rgb",
+                              type: "led_rgb_pct",
                               inputs: {
                                 R: { shadow: { type: "math_number", fields: { NUM: 0 } } },
                                 G: { shadow: { type: "math_number", fields: { NUM: 0 } } },
-                                B: { shadow: { type: "math_number", fields: { NUM: 255 } } },
+                                B: { shadow: { type: "math_number", fields: { NUM: 100 } } },
                               },
                               next: {
                                 block: {
