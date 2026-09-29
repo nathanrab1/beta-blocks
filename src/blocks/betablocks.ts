@@ -457,7 +457,8 @@ export function defineBlocks(): void {
       nextStatement: null,
       colour: GAME_COLOUR,
       tooltip:
-        "Quebre os tijolos com a bola! A raquete segue o potenciômetro ligado nessa porta (ou as setas ← →). " +
+        "Quebre os tijolos com a bola! A raquete segue o potenciômetro ligado nessa porta (ou as setas ← →: " +
+        "cada toque anda um pouco e, segurando, ela corre). " +
         "Espaço lança a bola, que também sai sozinha. A tecla x sai do jogo e o programa segue para o próximo bloco.",
     },
     {
@@ -1623,6 +1624,20 @@ const GAMES: Record<string, string[]> = {
   game_speed: [],
 };
 
+/**
+ * Teclas que o jogo quer saber quando são soltas (para andar enquanto seguradas):
+ * ao soltar, o app envia o nome com "-" na frente ("-left").
+ */
+const HOLD_KEYS: Record<string, string[]> = {
+  oled_breakout: ["left", "right"],
+};
+
+export function gameHoldKeys(workspace: Blockly.Workspace): Set<string> {
+  const keys = new Set<string>();
+  for (const b of programBlocks(workspace)) for (const k of HOLD_KEYS[b.type] ?? []) keys.add(k);
+  return keys;
+}
+
 /** Teclas dos jogos presentes no programa (o app envia essas ao apertar). */
 export function gameKeys(workspace: Blockly.Workspace): Set<string> {
   const keys = new Set<string>();
@@ -2135,6 +2150,7 @@ function breakoutCode(): string {
   return [
     "# --- jogo do Breakout ---",
     "_brk_mov = 0  # setas apertadas: -1 esquerda, +1 direita",
+    "_brk_seg = 0  # seta segurada (o app avisa quando solta: '-left' / '-right')",
     "_brk_lancar = False",
     "# desenho dos tijolos de cada fase (10 colunas x 4 fileiras, '#' = tijolo);",
     "# depois da ultima, os desenhos voltam do comeco com a bola mais rapida",
@@ -2151,19 +2167,26 @@ function breakoutCode(): string {
     "    return bytearray(1 if c == '#' else 0 for l in d for c in l)",
     "",
     "def _brk_tecla(nome):",
-    "    global _brk_mov, _brk_lancar, _jogo_tecla",
+    "    global _brk_mov, _brk_seg, _brk_lancar, _jogo_tecla",
+    "    if nome[0] == '-':  # soltou a seta",
+    "        if _brk_seg == (-1 if nome == '-left' else 1):",
+    "            _brk_seg = 0",
+    "        return",
     "    _jogo_tecla = True",
     "    if nome == 'left':",
     "        _brk_mov -= 1",
+    "        _brk_seg = -1",
     "    elif nome == 'right':",
     "        _brk_mov += 1",
+    "        _brk_seg = 1",
     "    else:",
     "        _brk_lancar = True",
     "",
     "def visor_breakout(pino):",
-    "    global _brk_mov, _brk_lancar",
+    "    global _brk_mov, _brk_seg, _brk_lancar",
     "    _visor_garantir()",
-    "    for n in ('left', 'right', 'space'):",
+    "    _brk_seg = 0",
+    "    for n in ('left', 'right', 'space', '-left', '-right'):",
     "        _teclas[n] = (lambda k: lambda: _brk_tecla(k))(n)",
     "    W, H = oled.width, oled.height",
     "    PW, PY = 22, H - 3  # largura e altura da raquete",
@@ -2194,7 +2217,8 @@ function breakoutCode(): string {
     "                agora = time.ticks_ms()",
     "                dt = min(0.1, time.ticks_diff(agora, antes) / 1000)  # segundos desde o quadro anterior",
     "                antes = agora",
-    "                # raquete: o potenciometro manda quando gira; as setas empurram 8 px",
+    "                # raquete: o potenciometro manda quando gira; cada toque na seta empurra 8 px",
+    "                # e, segurando, ela corre a 130 px por segundo",
     "                v = porta_analogica(pino)",
     "                if v != pot:",
     "                    pot = v",
@@ -2202,6 +2226,8 @@ function breakoutCode(): string {
     "                if _brk_mov:",
     "                    px += _brk_mov * 8",
     "                    _brk_mov = 0",
+    "                elif _brk_seg:",
+    "                    px += _brk_seg * 130 * dt",
     "                px = max(1, min(W - 1 - PW, px))  # a raquete fica dentro do contorno",
     "                if presa:",
     "                    presa = not (_brk_lancar or time.ticks_diff(agora, solta) >= 0)",

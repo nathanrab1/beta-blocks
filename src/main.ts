@@ -15,6 +15,7 @@ import {
   DISPLAY_MARK,
   eventKeys,
   gameKeys,
+  gameHoldKeys,
   oledCode,
   RENDERER,
   type InputPins,
@@ -990,8 +991,21 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   const rotulo = e.key === " " ? "espaço" : e.key;
   void board.sendEvent(name).catch(() => {});
+  if (gameHoldKeys(workspace).has(name)) heldKeys.add(name);
   setStatus(`Tecla "${rotulo}" enviada ${board.transport === "ble" ? "por Bluetooth" : "pelo cabo"}`, "ok");
 });
+
+/** Teclas seguradas nos jogos: ao soltar, avisa a placa ("-left") para parar de andar. */
+const heldKeys = new Set<string>();
+
+function releaseKey(name: string) {
+  if (!heldKeys.delete(name)) return;
+  if (board.connected) void board.sendEvent(`-${name}`).catch(() => {});
+}
+
+document.addEventListener("keyup", (e) => releaseKey(KEY_NAMES[e.key] ?? e.key.toLowerCase()));
+// a janela perdeu o foco com a tecla apertada: o keyup nunca vem, então solta tudo
+window.addEventListener("blur", () => [...heldKeys].forEach(releaseKey));
 
 // ---------- gravação do MicroPython ----------
 // Em duas etapas porque requestPort() só funciona direto num clique do usuário:

@@ -34,6 +34,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let link: BleLink | null = null;
 let keysShown = "";
+/** Teclas que o jogo quer saber quando são soltas (a placa lista "-left" junto de "left"). */
+let holdKeys = new Set<string>();
 
 function setStatus(text: string, kind: "" | "ok" | "error" = "") {
   statusEl.textContent = text;
@@ -65,12 +67,19 @@ function keyButton(name: string, text: string): HTMLButtonElement {
     link?.key(name).catch(() => setStatus("A tecla não chegou à placa.", "error"));
   });
   for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
-    b.addEventListener(ev, () => b.classList.remove("on"));
+    b.addEventListener(ev, () => {
+      if (!b.classList.contains("on")) return;
+      b.classList.remove("on");
+      // segurando, o jogo anda até saber que soltou
+      if (holdKeys.has(name)) link?.key(`-${name}`).catch(() => {});
+    });
   }
   return b;
 }
 
-function renderKeys(keys: string[]) {
+function renderKeys(all: string[]) {
+  holdKeys = new Set(all.filter((k) => k.startsWith("-")).map((k) => k.slice(1)));
+  const keys = all.filter((k) => !k.startsWith("-"));
   const arrows = keys.filter((k) => k in ARROWS);
   const others = keys.filter((k) => !(k in ARROWS));
 
