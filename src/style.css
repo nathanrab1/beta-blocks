@@ -269,3 +269,31 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
   .draw-text .text-input { flex: 0 1 180px; }
   .stamp-grid { grid-template-columns: repeat(9, 44px); }
 }
+
+/* editor de melodia: grade de 8 tempos com a pentatônica de Dó */
+.melody-box { max-width: none; }
+.melody-box h2 { margin-top: 0; }
+.melody-hint { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.melody-grid {
+  display: grid; grid-template-columns: auto repeat(8, 44px); gap: 6px; align-items: center;
+  padding: 14px; background: #cf63cf; border-radius: 10px;
+}
+.melody-note { color: #fff; font-weight: 700; font-size: 13px; text-align: right; padding-right: 4px; }
+.melody-note small { font-weight: 400; opacity: 0.8; margin-left: 1px; }
+.melody-cell {
+  width: 44px; height: 38px; border: 2px solid #fff; border-radius: 8px; background: #e2e2e2;
+  cursor: pointer; padding: 0; touch-action: manipulation;
+}
+.melody-cell:hover { background: #f4f4f4; }
+.melody-cell.on { background: var(--cor); }
+.melody-cell.tocando { box-shadow: 0 0 0 3px #fff8; }
+.melody-cell.on.tocando { box-shadow: 0 0 0 3px #fff; transform: scale(1.08); }
+
+@media (max-width: 600px), (max-height: 500px) {
+  .melody-box { padding: 12px; width: 100%; }
+  .melody-hint { display: none; }
+  .melody-grid {
+    grid-template-columns: auto repeat(8, 1fr); gap: 4px; padding: 8px;
+  }
+  .melody-cell { width: 100%; height: min(34px, calc((100dvh - 140px) / 9 - 4px)); }
+}

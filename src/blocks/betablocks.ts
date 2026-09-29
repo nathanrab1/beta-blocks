@@ -1,6 +1,7 @@
 import * as Blockly from "blockly";
 import { pythonGenerator, Order } from "blockly/python";
 import { openDrawEditor, bitmapToDataUrl, emptyBitmapB64 } from "../drawEditor";
+import { openMelodyEditor, melodyPreviewUrl, emptyMelody } from "../melodyEditor";
 
 const EVENT_COLOUR = 45;
 const LED_COLOUR = 10;
@@ -14,6 +15,69 @@ const TEXT_COLOUR = 70;
 const MATH_COLOUR = 230;
 const VARIABLE_COLOUR = "#f28c28"; // laranja, como no Scratch (o padrão do Blockly é o rosa dos Jogos)
 const RADIO_COLOUR = "#d6268f";
+const SOUND_COLOUR = "#cf63cf"; // lilás, como a categoria Som do Scratch
+
+/** Pino padrão do buzzer nos blocos de Som. */
+const SOM_PINO = 10;
+const NOTE_OPTIONS: [string, string][] = [
+  ["Dó", "0"], ["Dó♯", "1"], ["Ré", "2"], ["Ré♯", "3"], ["Mi", "4"], ["Fá", "5"],
+  ["Fá♯", "6"], ["Sol", "7"], ["Sol♯", "8"], ["Lá", "9"], ["Lá♯", "10"], ["Si", "11"],
+];
+const OCTAVE_OPTIONS: [string, string][] = ["3", "4", "5", "6", "7"].map((o) => [o, o]);
+const BEAT_OPTIONS: [string, string][] = [
+  ["1 batida", "1"], ["1/2 batida", "0.5"], ["1/4 batida", "0.25"], ["1/8 batida", "0.125"],
+  ["2 batidas", "2"], ["4 batidas", "4"],
+];
+/** Melodias prontas: [nome no menu, id, notas]. Notas: letra, # opcional, oitava (R = pausa) e
+ * batidas depois do ':' (sem ':' = 1). Só as melodias usadas no programa vão para a placa. */
+const MELODIES: [string, string, string][] = [
+  ["Parabéns a você", "PARABENS",
+    "G4:.75 G4:.25 A4 G4 C5 B4:2 G4:.75 G4:.25 A4 G4 D5 C5:2 " +
+    "G4:.75 G4:.25 G5 E5 C5 B4 A4:2 F5:.75 F5:.25 E5 C5 D5 C5:2"],
+  ["Brilha, brilha, estrelinha", "BRILHA",
+    "C5 C5 G5 G5 A5 A5 G5:2 F5 F5 E5 E5 D5 D5 C5:2 G5 G5 F5 F5 E5 E5 D5:2 " +
+    "G5 G5 F5 F5 E5 E5 D5:2 C5 C5 G5 G5 A5 A5 G5:2 F5 F5 E5 E5 D5 D5 C5:2"],
+  ["Ode à alegria", "ODE",
+    "E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 E5:1.5 D5:.5 D5:2 " +
+    "E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5:1.5 C5:.5 C5:2"],
+  ["Frère Jacques", "JACQUES",
+    "C5 D5 E5 C5 C5 D5 E5 C5 E5 F5 G5:2 E5 F5 G5:2 " +
+    "G5:.5 A5:.5 G5:.5 F5:.5 E5 C5 G5:.5 A5:.5 G5:.5 F5:.5 E5 C5 C5 G4 C5:2 C5 G4 C5:2"],
+  ["Jingle Bells", "JINGLE",
+    "E5 E5 E5:2 E5 E5 E5:2 E5 G5 C5:1.5 D5:.5 E5:4 F5 F5 F5:1.5 F5:.5 F5 E5 E5 E5:.5 E5:.5 " +
+    "E5 D5 D5 E5 D5:2 G5:2 E5 E5 E5:2 E5 E5 E5:2 E5 G5 C5:1.5 D5:.5 E5:4 " +
+    "F5 F5 F5:1.5 F5:.5 F5 E5 E5 E5:.5 E5:.5 G5 G5 F5 D5 C5:4"],
+  ["Noite feliz", "NOITE",
+    "G5:1.5 A5:.5 G5 E5:3 G5:1.5 A5:.5 G5 E5:3 D6:2 D6 B5:3 C6:2 C6 G5:3 " +
+    "A5:2 A5 C6:1.5 B5:.5 A5 G5:1.5 A5:.5 G5 E5:3 A5:2 A5 C6:1.5 B5:.5 A5 G5:1.5 A5:.5 G5 E5:3 " +
+    "D6:2 D6 F6:1.5 D6:.5 B5 C6:3 E6:3 C6 G5 E5 G5:1.5 F5:.5 D5 C5:3"],
+  ["Canção de ninar (Brahms)", "NINAR",
+    "E5:.5 E5:.5 G5:2 E5:.5 E5:.5 G5:2 E5:.5 G5:.5 C6:1 B5:1.5 A5:.5 A5 G5 " +
+    "D5:.5 E5:.5 F5 D5 D5:.5 E5:.5 F5:2 D5:.5 F5:.5 B5:.5 A5:.5 G5 B5 C6:2"],
+  ["Pour Elise", "ELISE",
+    "E6:.5 D#6:.5 E6:.5 D#6:.5 E6:.5 B5:.5 D6:.5 C6:.5 A5 R:.5 C5:.5 E5:.5 A5:.5 " +
+    "B5 R:.5 E5:.5 G#5:.5 B5:.5 C6 R:.5 E5:.5 " +
+    "E6:.5 D#6:.5 E6:.5 D#6:.5 E6:.5 B5:.5 D6:.5 C6:.5 A5 R:.5 C5:.5 E5:.5 A5:.5 " +
+    "B5 R:.5 E5:.5 C6:.5 B5:.5 A5:2"],
+  ["5ª Sinfonia (Beethoven)", "QUINTA",
+    "G5:.5 G5:.5 G5:.5 D#5:2 R:.5 F5:.5 F5:.5 F5:.5 D5:3"],
+  ["Tetris", "TETRIS",
+    "E5 B4:.5 C5:.5 D5 C5:.5 B4:.5 A4 A4:.5 C5:.5 E5 D5:.5 C5:.5 B4:1.5 C5:.5 D5 E5 C5 A4 A4:2 " +
+    "R:.5 D5:1.5 F5:.5 A5 G5:.5 F5:.5 E5:1.5 C5:.5 E5 D5:.5 C5:.5 B4 B4:.5 C5:.5 D5 E5 C5 A4 A4:2"],
+  ["efeito: moeda", "MOEDA", "B5:.25 E6:1"],
+  ["efeito: subir", "SUBIR", "C5:.25 E5:.25 G5:.25 C6:.5"],
+  ["efeito: descer", "DESCER", "C6:.25 G5:.25 E5:.25 C5:.5"],
+  ["efeito: pulo", "PULO", "G4:.125 C5:.125 G5:.25"],
+  ["efeito: laser", "LASER", "C7:.125 A6:.125 F6:.125 D6:.125 B5:.125 G5:.125"],
+  ["efeito: poder", "PODER", "C5:.125 E5:.125 G5:.125 C6:.125 E6:.125 G6:.125 C7:.5"],
+  ["efeito: sirene", "SIRENE", "A5:.5 D6:.5 A5:.5 D6:.5 A5:.5 D6:.5 A5:.5 D6:.5"],
+  ["efeito: alarme", "ALARME", "A6:.25 R:.25 A6:.25 R:.25 A6:.25 R:.25 A6:.25 R:.25"],
+  ["efeito: erro", "ERRO", "G3:.5 C3:1.5"],
+  ["efeito: fim de jogo", "FIM", "G4 F#4 F4 E4:3"],
+  ["efeito: vitória", "VITORIA", "C5:.33 E5:.33 G5:.33 C6:1 G5:.5 C6:1.5"],
+];
+const MELODY_OPTIONS: [string, string][] = MELODIES.map(([label, id]) => [label, id]);
+const somPinoField = { type: "field_number", name: "PIN", value: SOM_PINO, min: 0, max: 48, precision: 1 };
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
 const NAMED_COLORS: Record<string, [number, number, number]> = {
@@ -511,6 +575,89 @@ export function defineBlocks(): void {
         "A tecla x sai do jogo e o programa segue para o próximo bloco.",
     },
     {
+      type: "sound_note",
+      message0: "tocar nota %1 %2 por %3 no pino %4",
+      args0: [
+        { type: "field_dropdown", name: "NOTE", options: NOTE_OPTIONS },
+        { type: "field_dropdown", name: "OCTAVE", options: OCTAVE_OPTIONS },
+        { type: "field_dropdown", name: "BEATS", options: BEAT_OPTIONS },
+        somPinoField,
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: SOUND_COLOUR,
+      tooltip:
+        "Toca uma nota no buzzer ligado nesse pino e espera ela acabar. O número depois da nota é a oitava: " +
+        "quanto maior, mais agudo (Lá 4 = 440 Hz). A duração segue o ritmo (120 batidas por minuto, se não mudar).",
+    },
+    {
+      type: "sound_rest",
+      message0: "pausa de %1",
+      args0: [{ type: "field_dropdown", name: "BEATS", options: BEAT_OPTIONS }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: SOUND_COLOUR,
+      tooltip: "Fica em silêncio pelo tempo dessa nota, seguindo o ritmo.",
+    },
+    {
+      type: "sound_tempo",
+      message0: "ritmo de %1 batidas por minuto",
+      args0: [{ type: "input_value", name: "BPM", check: "Number" }],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: SOUND_COLOUR,
+      tooltip: "Muda a velocidade das notas e das melodias: mais batidas por minuto, música mais rápida (começa em 120).",
+    },
+    {
+      type: "sound_hz",
+      message0: "tocar %1 Hz por %2 ms no pino %3",
+      args0: [
+        { type: "input_value", name: "HZ", check: "Number" },
+        { type: "input_value", name: "MS", check: "Number" },
+        somPinoField,
+      ],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: SOUND_COLOUR,
+      tooltip: "Toca um som dessa frequência (em Hz: vibrações por segundo) pelo tempo em milissegundos e espera acabar.",
+    },
+    {
+      type: "sound_start",
+      message0: "começar a tocar %1 Hz no pino %2",
+      args0: [{ type: "input_value", name: "HZ", check: "Number" }, somPinoField],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: SOUND_COLOUR,
+      tooltip: "Liga o som nessa frequência e segue o programa: ele só para com \"parar o som\" (ou outro som no mesmo pino).",
+    },
+    {
+      type: "sound_stop",
+      message0: "parar o som no pino %1",
+      args0: [somPinoField],
+      previousStatement: null,
+      nextStatement: null,
+      colour: SOUND_COLOUR,
+      tooltip: "Desliga o som desse pino (inclusive uma melodia em segundo plano).",
+    },
+    {
+      type: "sound_melody",
+      message0: "tocar melodia %1 no pino %2 %3",
+      args0: [
+        { type: "field_dropdown", name: "MELODY", options: MELODY_OPTIONS },
+        somPinoField,
+        { type: "field_dropdown", name: "MODE", options: [["até o fim", "FIM"], ["em segundo plano", "FUNDO"]] },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: SOUND_COLOUR,
+      tooltip:
+        "Toca uma música ou efeito pronto. \"até o fim\": o programa espera a música acabar. " +
+        "\"em segundo plano\": o programa segue enquanto ela toca.",
+    },
+    {
       type: "forever",
       message0: "repetir para sempre %1 %2",
       args0: [
@@ -629,6 +776,7 @@ export function defineBlocks(): void {
   ]);
 
   defineDrawBlock();
+  defineComposeBlock();
   defineTextJoinBlock();
 
   // ---- Geradores Python ----
@@ -689,6 +837,26 @@ export function defineBlocks(): void {
   };
 
   pythonGenerator.forBlock["led_off"] = () => "led_rgb(0, 0, 0)\n";
+
+  const somPino = (block: Blockly.Block) => Math.round(Number(block.getFieldValue("PIN")) || 0);
+  pythonGenerator.forBlock["sound_note"] = (block) => {
+    const semi = Number(block.getFieldValue("NOTE"));
+    const oct = Number(block.getFieldValue("OCTAVE"));
+    const hz = Math.round(440 * 2 ** ((12 * (oct + 1) + semi - 69) / 12));
+    return `som_nota(${somPino(block)}, ${hz}, ${Number(block.getFieldValue("BEATS"))})\n`;
+  };
+  pythonGenerator.forBlock["sound_rest"] = (block) => `som_pausa(${Number(block.getFieldValue("BEATS"))})\n`;
+  pythonGenerator.forBlock["sound_tempo"] = (block, gen) =>
+    `som_ritmo(${gen.valueToCode(block, "BPM", Order.NONE) || "120"})\n`;
+  pythonGenerator.forBlock["sound_hz"] = (block, gen) =>
+    `som_hz(${somPino(block)}, ${gen.valueToCode(block, "HZ", Order.NONE) || "0"}, ${gen.valueToCode(block, "MS", Order.NONE) || "0"})\n`;
+  pythonGenerator.forBlock["sound_start"] = (block, gen) =>
+    `som_comecar(${somPino(block)}, ${gen.valueToCode(block, "HZ", Order.NONE) || "0"})\n`;
+  pythonGenerator.forBlock["sound_stop"] = (block) => `som_parar(${somPino(block)})\n`;
+  pythonGenerator.forBlock["sound_melody"] = (block) =>
+    `som_melodia(${somPino(block)}, '${block.getFieldValue("MELODY")}', ${block.getFieldValue("MODE") === "FUNDO" ? "True" : "False"})\n`;
+  pythonGenerator.forBlock["sound_compose"] = (block) =>
+    `som_tocar(${somPino(block)}, '${(block as ComposeBlock).notas}', ${block.getFieldValue("MODE") === "FUNDO" ? "True" : "False"})\n`;
 
   pythonGenerator.forBlock["wait_ms"] = (block, gen) => {
     const t = gen.valueToCode(block, "TIME", Order.NONE) || "0";
@@ -850,6 +1018,10 @@ export function resetBoardCode(ledPin: number): string {
     "except Exception:",
     "    pass",
     "try:",
+    "    _som_timer.deinit()",
+    "except Exception:",
+    "    pass",
+    "try:",
     "    for _x in _pwms.values():",
     "        _x.deinit()",
     "    _pwms.clear()",
@@ -926,6 +1098,57 @@ function defineDrawBlock() {
     loadExtraState(this: DrawBlock, state: { bitmap?: string }) {
       this.bitmapB64 = state.bitmap || emptyBitmapB64();
       (this.getField("PREVIEW") as Blockly.FieldImage).setValue(bitmapToDataUrl(this.bitmapB64));
+    },
+  };
+}
+
+// ---- bloco "tocar melodia" com a grade de notas ----
+
+type ComposeBlock = Blockly.Block & { notas: string };
+
+const COMPOSE_W = 48;
+const COMPOSE_H = 40;
+
+function defineComposeBlock() {
+  Blockly.Blocks["sound_compose"] = {
+    init(this: ComposeBlock) {
+      this.notas = emptyMelody();
+      const preview = new Blockly.FieldImage(melodyPreviewUrl(this.notas, COMPOSE_W, COMPOSE_H), COMPOSE_W, COMPOSE_H, "melodia");
+      const editButton = new Blockly.FieldImage(EDIT_BUTTON_SRC, 66, 24, "editar", () => {
+        if (this.isInFlyout) return;
+        void openMelodyEditor(this.notas).then((result) => {
+          if (result === null || result === this.notas) return;
+          const old = this.notas;
+          this.notas = result;
+          preview.setValue(melodyPreviewUrl(result, COMPOSE_W, COMPOSE_H));
+          Blockly.Events.fire(
+            new Blockly.Events.BlockChange(
+              this, "mutation", null, JSON.stringify({ notas: old }), JSON.stringify({ notas: result }),
+            ),
+          );
+        });
+      });
+      this.appendDummyInput()
+        .appendField("tocar")
+        .appendField(preview, "PREVIEW")
+        .appendField(editButton, "EDIT")
+        .appendField("no pino")
+        .appendField(new Blockly.FieldNumber(SOM_PINO, 0, 48, 1), "PIN")
+        .appendField(new Blockly.FieldDropdown([["até o fim", "FIM"], ["em segundo plano", "FUNDO"]]), "MODE");
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
+      this.setColour(SOUND_COLOUR);
+      this.setTooltip(
+        "Toca a melodia que você montou: 8 tempos, cada um com uma nota ou silêncio. " +
+          "Clique em Editar para escolher as notas. Cada tempo dura 1 batida (veja o bloco 'ritmo').",
+      );
+    },
+    saveExtraState(this: ComposeBlock) {
+      return { notas: this.notas };
+    },
+    loadExtraState(this: ComposeBlock, state: { notas?: string }) {
+      this.notas = state.notas || emptyMelody();
+      (this.getField("PREVIEW") as Blockly.FieldImage).setValue(melodyPreviewUrl(this.notas, COMPOSE_W, COMPOSE_H));
     },
   };
 }
@@ -1255,6 +1478,7 @@ export function programCode(workspace: Blockly.Workspace): string {
   const thresholdHats = tops.filter((b) => b.type === "event_threshold");
   if (buttonHats.length > 0 || thresholdHats.length > 0) code += inputsRuntimeCode();
   if (usesRadio(workspace)) code += radioCode();
+  if (programBlocks(workspace).some((b) => b.type.startsWith("sound_"))) code += soundCode(workspace);
   keyHats.forEach((hat, i) => {
     const next = hat.getNextBlock();
     let body = next ? pythonGenerator.blockToCode(next) : "";
@@ -1388,6 +1612,136 @@ function keysRuntimeCode(): string {
     "",
     "_key_timer = Timer(1)",
     "_key_timer.init(period=15, mode=Timer.PERIODIC, callback=_bb_protegido(_tecla_ler))",
+    "",
+    "",
+  ].join("\n");
+}
+
+/** Som: notas, frequências e melodias num buzzer passivo (PWM na frequência da nota). */
+function soundCode(workspace: Blockly.Workspace): string {
+  const usadas = new Set(
+    programBlocks(workspace).filter((b) => b.type === "sound_melody").map((b) => b.getFieldValue("MELODY")),
+  );
+  const melodias = MELODIES.filter(([, id]) => usadas.has(id));
+  return [
+    "# --- som (buzzer passivo: o PWM na frequencia da nota faz ele vibrar) ---",
+    "_som_bpm = 120  # batidas por minuto (bloco 'ritmo')",
+    "_SOM_NOTAS = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}",
+    "# melodias usadas no programa: nota (letra, # opcional, oitava; R = pausa) e batidas depois do ':' (sem ':' = 1)",
+    "_SOM_MELODIAS = {",
+    ...melodias.map(([, id, notas]) => `    '${id}': '${notas}',`),
+    "}",
+    "_som_timer = None  # melodia em segundo plano: um timer toca uma nota de cada vez",
+    "_som_fila = []  # (hz, ms) que ainda faltam da melodia em segundo plano",
+    "_som_fundo = None  # pino da melodia em segundo plano",
+    "",
+    "def _som_pwm(pino):",
+    "    pino = int(pino)",
+    "    p = _pwms.get(pino)",
+    "    if p is None:",
+    "        p = PWM(Pin(pino), freq=440, duty_u16=0)",
+    "        _pwms[pino] = p",
+    "    return p",
+    "",
+    "def _som_ligar(pino, hz):",
+    "    p = _som_pwm(pino)",
+    "    hz = int(hz)",
+    "    if hz < 20:  # frequencia baixa demais (ou pausa): silencio",
+    "        p.duty_u16(0)",
+    "    else:",
+    "        p.freq(min(hz, 20000))",
+    "        p.duty_u16(32768)  # ligado metade do tempo: o som mais forte do buzzer passivo",
+    "",
+    "def _som_calar(pino):",
+    "    _som_pwm(pino).duty_u16(0)",
+    "",
+    "# um bloco de som nesse pino para a melodia que estava tocando em segundo plano",
+    "def _som_parar_fundo(pino):",
+    "    global _som_fundo",
+    "    if _som_fundo is not None and _som_fundo == int(pino):",
+    "        _som_fila.clear()",
+    "        _som_fundo = None",
+    "        if _som_timer:",
+    "            _som_timer.deinit()",
+    "        _som_calar(pino)",
+    "",
+    "def som_comecar(pino, hz):",
+    "    _som_parar_fundo(pino)",
+    "    _som_ligar(pino, hz)",
+    "",
+    "def som_parar(pino):",
+    "    _som_parar_fundo(pino)",
+    "    _som_calar(pino)",
+    "",
+    "def som_hz(pino, hz, ms):",
+    "    som_comecar(pino, hz)",
+    "    try:",
+    "        _bb_esperar(ms)",
+    "    finally:  # mesmo interrompido (Parar, outro evento), o buzzer nao fica apitando",
+    "        _som_calar(pino)",
+    "",
+    "def som_nota(pino, hz, batidas):",
+    "    ms = batidas * 60000 / _som_bpm",
+    "    som_comecar(pino, hz)",
+    "    try:",
+    "        _bb_esperar(ms * 0.9)",
+    "    finally:",
+    "        _som_calar(pino)",
+    "    _bb_esperar(ms * 0.1)  # um respiro no fim: notas iguais seguidas nao se grudam",
+    "",
+    "def som_pausa(batidas):",
+    "    _bb_esperar(batidas * 60000 / _som_bpm)",
+    "",
+    "def som_ritmo(bpm):",
+    "    global _som_bpm",
+    "    _som_bpm = max(20, min(400, bpm))",
+    "",
+    "def _som_notas(texto):  # texto da melodia -> [(hz, batidas)]",
+    "    notas = []",
+    "    for tok in texto.split():",
+    "        n, b = (tok.split(':') + ['1'])[:2]",
+    "        if n == 'R':",
+    "            hz = 0",
+    "        else:",
+    "            semi = _SOM_NOTAS[n[0]] + (1 if n[1] == '#' else 0)",
+    "            hz = 440 * 2 ** ((12 * (int(n[-1]) + 1) + semi - 69) / 12)",
+    "        notas.append((hz, float(b)))",
+    "    return notas",
+    "",
+    "def _som_proxima(t):",
+    "    global _som_fundo",
+    "    if _som_fundo is None:",
+    "        return",
+    "    if not _som_fila or not _bb_rodando:",
+    "        _som_calar(_som_fundo)",
+    "        _som_fundo = None",
+    "        return",
+    "    hz, ms = _som_fila.pop(0)",
+    "    _som_ligar(_som_fundo, hz)",
+    "    _som_timer.init(period=max(1, int(ms)), mode=Timer.ONE_SHOT, callback=_bb_protegido(_som_proxima))",
+    "",
+    "def som_melodia(pino, nome, fundo):",
+    "    som_tocar(pino, _SOM_MELODIAS[nome], fundo)",
+    "",
+    "def som_tocar(pino, texto, fundo):",
+    "    global _som_timer, _som_fundo",
+    "    notas = _som_notas(texto)",
+    "    if not fundo:  # ate o fim: o programa espera a melodia acabar",
+    "        for hz, b in notas:",
+    "            som_nota(pino, hz, b)",
+    "        return",
+    "    # em segundo plano: o programa segue e um timer vai trocando as notas (uma melodia por vez)",
+    "    if _som_fundo is not None:",
+    "        _som_parar_fundo(_som_fundo)",
+    "    som_parar(pino)",
+    "    for hz, b in notas:",
+    "        ms = b * 60000 / _som_bpm",
+    "        _som_fila.append((hz, ms * 0.9))",
+    "        _som_fila.append((0, ms * 0.1))",
+    "    if _som_timer is None:",
+    "        _som_timer = Timer(0)",
+    "    _som_fundo = int(pino)",
+    "    _som_proxima(None)",
     "",
     "",
   ].join("\n");
@@ -3233,6 +3587,36 @@ export const toolbox = {
           type: "port_pwm",
           inputs: { PCT: { shadow: { type: "math_number", fields: { NUM: 50 } } } },
         },
+      ],
+    },
+    {
+      kind: "category",
+      name: "Som",
+      colour: SOUND_COLOUR,
+      contents: [
+        { kind: "block", type: "sound_note", fields: { NOTE: "0", OCTAVE: "4", BEATS: "1" } },
+        { kind: "block", type: "sound_rest" },
+        { kind: "block", type: "sound_melody" },
+        { kind: "block", type: "sound_compose" },
+        {
+          kind: "block",
+          type: "sound_tempo",
+          inputs: { BPM: { shadow: { type: "math_number", fields: { NUM: 120 } } } },
+        },
+        {
+          kind: "block",
+          type: "sound_hz",
+          inputs: {
+            HZ: { shadow: { type: "math_number", fields: { NUM: 440 } } },
+            MS: { shadow: { type: "math_number", fields: { NUM: 500 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "sound_start",
+          inputs: { HZ: { shadow: { type: "math_number", fields: { NUM: 440 } } } },
+        },
+        { kind: "block", type: "sound_stop" },
       ],
     },
     {
