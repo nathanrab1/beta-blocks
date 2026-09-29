@@ -37,10 +37,7 @@ body {
 }
 
 .brand { display: flex; align-items: center; gap: 8px; font-size: 18px; }
-.brand-dot {
-  width: 14px; height: 14px; border-radius: 50%;
-  background: linear-gradient(135deg, #ff3b3b, #2fd05a, #2f80ed);
-}
+.brand-logo { height: 20px; width: auto; display: block; flex-shrink: 0; }
 .brand-sub { color: var(--muted); font-size: 13px; }
 
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -62,6 +59,14 @@ body {
 a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover:not(:disabled) { background: var(--accent-dark); }
+/* Bluetooth: botão cheio no azul-marinho da paleta, só o símbolo em branco (como o ▶) */
+/* margem negativa: o símbolo maior não aumenta a altura do botão */
+.bt-icon { height: 1.4em; width: auto; vertical-align: -0.3em; margin: -0.2em 0; }
+.btn-bt { background: #4a6cb3; border-color: #4a6cb3; color: #fff; }
+.btn-bt:hover:not(:disabled) { background: #3d5b9c; }
+/* ▶ Enviar: o mesmo verde do bloco "ao iniciar" (EVENT_COLOUR em betablocks.ts) */
+#btn-upload { background: #66a35c; border-color: #66a35c; }
+#btn-upload:hover:not(:disabled) { background: #568c4d; }
 .btn-ghost { color: var(--muted); }
 
 .workspace-area { flex: 1; display: flex; min-height: 0; }
@@ -179,12 +184,12 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
   .topbar { position: relative; gap: 8px; padding: 6px 8px; }
   .menu-btn { display: inline-block; padding: 5px 11px; font-size: 18px; line-height: 1; }
   .brand { flex: 1; min-width: 0; gap: 6px; font-size: 16px; }
-  .brand strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .brand-sub { display: none; }
   .project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .toolbar { flex-wrap: nowrap; gap: 6px; }
   .toolbar .btn { padding: 6px 12px; font-size: 16px; white-space: nowrap; }
-  .toolbar .btn-label { display: none; } /* no topo só o ícone: ᛒ ▶ ■ */
+  .toolbar .btn-label { display: none; } /* no topo só o ícone: ᛒ ▶ */
+  .toolbar #btn-upload { padding: 6px 34px; } /* ▶ largo, no lugar que era do ■ Parar (agora no menu) */
 
   .menu-panel {
     position: absolute; top: calc(100% + 4px); left: 8px; z-index: 200; /* acima das categorias do Blockly (70) */
@@ -276,7 +281,7 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
 .melody-hint { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
 .melody-grid {
   display: grid; grid-template-columns: auto repeat(8, 44px); gap: 6px; align-items: center;
-  padding: 14px; background: #cf63cf; border-radius: 10px;
+  padding: 14px; background: #a8a9cc; border-radius: 10px;
 }
 .melody-note { color: #fff; font-weight: 700; font-size: 13px; text-align: right; padding-right: 4px; }
 .melody-note small { font-weight: 400; opacity: 0.8; margin-left: 1px; }

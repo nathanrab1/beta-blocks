@@ -37,8 +37,7 @@
       <button id="btn-menu" class="btn menu-btn" aria-label="Menu" aria-expanded="false">☰</button>
       <div id="menu-panel" class="menu-panel" hidden></div>
       <div class="brand">
-        <span class="brand-dot"></span>
-        <strong>Beta Blocks</strong>
+        <img class="brand-logo" src="./icons/logo.svg" alt="Beta Kit" />
         <span class="brand-sub">ESP32-S3-Zero</span>
         <span id="project-name" class="project-name"></span>
       </div>
@@ -53,7 +52,7 @@
         <input id="file-load" type="file" accept=".json,application/json" hidden />
         <span class="toolbar-sep"></span>
         <button id="btn-connect" class="btn">Conectar</button>
-        <button id="btn-connect-ble" class="btn" title="Conecta sem cabo, pelo Bluetooth" aria-label="Bluetooth" hidden>ᛒ<span class="btn-label"> Bluetooth</span></button>
+        <button id="btn-connect-ble" class="btn btn-bt" title="Conecta sem cabo, pelo Bluetooth" aria-label="Bluetooth" hidden><img class="bt-icon" src="./icons/bluetooth.svg" alt="" /><span class="btn-label"> Bluetooth</span></button>
         <button id="btn-upload" class="btn btn-primary" aria-label="Enviar" disabled>▶<span class="btn-label"> Enviar</span></button>
         <button id="btn-stop" class="btn" aria-label="Parar" disabled>■<span class="btn-label"> Parar</span></button>
         <button id="btn-flash" class="btn btn-ghost" disabled>Gravar MicroPython</button>

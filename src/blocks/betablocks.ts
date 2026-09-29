@@ -3,19 +3,50 @@ import { pythonGenerator, Order } from "blockly/python";
 import { openDrawEditor, bitmapToDataUrl, emptyBitmapB64 } from "../drawEditor";
 import { openMelodyEditor, melodyPreviewUrl, emptyMelody } from "../melodyEditor";
 
-const EVENT_COLOUR = 45;
-const LED_COLOUR = 10;
-const TIME_COLOUR = 40;
-const CONTROL_COLOUR = 120;
-const PORT_COLOUR = 200;
-const INPUT_COLOUR = 160;
-const OLED_COLOUR = 260;
-const GAME_COLOUR = 330;
-const TEXT_COLOUR = 70;
-const MATH_COLOUR = 230;
-const VARIABLE_COLOUR = "#f28c28"; // laranja, como no Scratch (o padrão do Blockly é o rosa dos Jogos)
-const RADIO_COLOUR = "#d6268f";
-const SOUND_COLOUR = "#cf63cf"; // lilás, como a categoria Som do Scratch
+// Paleta do Beta Kit. Categorias parecidas dividem a mesma cor.
+const PALETA = {
+  verde: "#66a35c",
+  vermelho: "#9b3a3a",
+  amarelo: "#e5c15c",
+  marinho: "#2e4784",
+  azul: "#7aa3b5",
+  lilas: "#a8a9cc",
+  laranja: "#cc6239",
+  grafite: "#444444",
+  preto: "#2e2e2e",
+  cinza: "#adb0b5",
+};
+const EVENT_COLOUR = PALETA.verde; // "ao iniciar" e eventos
+const LED_COLOUR = PALETA.vermelho;
+const TIME_COLOUR = PALETA.amarelo;
+const CONTROL_COLOUR = PALETA.amarelo;
+const PORT_COLOUR = PALETA.marinho;
+const INPUT_COLOUR = PALETA.azul;
+const OLED_COLOUR = PALETA.grafite;
+const GAME_COLOUR = PALETA.preto;
+const TEXT_COLOUR = PALETA.cinza;
+const MATH_COLOUR = PALETA.azul;
+const LOGIC_COLOUR = PALETA.marinho;
+const VARIABLE_COLOUR = PALETA.laranja;
+const RADIO_COLOUR = PALETA.lilas;
+const SOUND_COLOUR = PALETA.lilas;
+
+/** Tema: os blocos que vêm do Blockly (se, repetir, lógica, números, texto, variáveis) na mesma paleta. */
+export const THEME = Blockly.Theme.defineTheme("betablocks", {
+  name: "betablocks",
+  base: Blockly.Themes.Classic,
+  blockStyles: {
+    logic_blocks: { colourPrimary: LOGIC_COLOUR },
+    loop_blocks: { colourPrimary: CONTROL_COLOUR },
+    math_blocks: { colourPrimary: MATH_COLOUR },
+    text_blocks: { colourPrimary: TEXT_COLOUR },
+    list_blocks: { colourPrimary: TEXT_COLOUR },
+    colour_blocks: { colourPrimary: LED_COLOUR },
+    variable_blocks: { colourPrimary: VARIABLE_COLOUR },
+    variable_dynamic_blocks: { colourPrimary: VARIABLE_COLOUR },
+    procedure_blocks: { colourPrimary: PALETA.laranja },
+  },
+});
 
 /** Pino padrão do buzzer nos blocos de Som. */
 const SOM_PINO = 12;
@@ -3795,7 +3826,7 @@ export const toolbox = {
     {
       kind: "category",
       name: "Lógica",
-      colour: 210,
+      colour: LOGIC_COLOUR,
       contents: [
         {
           kind: "block",

@@ -18,6 +18,7 @@ import {
   gameHoldKeys,
   oledCode,
   RENDERER,
+  THEME,
   type InputPins,
 } from "./blocks/betablocks";
 import ssd1306Source from "./lib/ssd1306.py?raw";
@@ -106,9 +107,11 @@ const escala = () => (compacto.matches ? 0.65 : 0.9);
 const workspace = Blockly.inject("blockly-div", {
   toolbox,
   renderer: RENDERER,
+  theme: THEME,
   grid: { spacing: 24, length: 3, colour: "#e3e6eb", snap: true },
-  zoom: { controls: true, wheel: true, startScale: escala() },
-  trashcan: true,
+  // sem botões de zoom e lixeira: zoom com a roda do mouse ou pinça; apagar arrastando para a biblioteca
+  zoom: { controls: false, wheel: true, pinch: true, startScale: escala() },
+  trashcan: false,
   move: { scrollbars: true, drag: true, wheel: false },
 });
 
@@ -118,7 +121,7 @@ const workspace = Blockly.inject("blockly-div", {
   const menuPanel = $("menu-panel");
   const btnMenu = $<HTMLButtonElement>("btn-menu");
   const sidePanel = document.querySelector<HTMLElement>(".side-panel")!;
-  const NO_TOPO = new Set(["btn-connect-ble", "btn-upload", "btn-stop"]);
+  const NO_TOPO = new Set(["btn-connect-ble", "btn-upload"]); // ■ Parar vai para o menu
   const itens = [...toolbarEl.children] as HTMLElement[];
 
   const abrirMenu = (abrir: boolean) => {
