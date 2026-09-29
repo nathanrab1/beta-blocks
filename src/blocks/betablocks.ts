@@ -12,6 +12,7 @@ const OLED_COLOUR = 260;
 const GAME_COLOUR = 330;
 const TEXT_COLOUR = 70;
 const MATH_COLOUR = 230;
+const VARIABLE_COLOUR = "#f28c28"; // laranja, como no Scratch (o padrão do Blockly é o rosa dos Jogos)
 const RADIO_COLOUR = "#d6268f";
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
@@ -63,6 +64,7 @@ class BetaRenderer extends Blockly.zelos.Renderer {
 export const RENDERER = "betablocks";
 
 export function defineBlocks(): void {
+  Blockly.Msg["VARIABLES_HUE"] = VARIABLE_COLOUR;
   if (!Blockly.registry.hasItem(Blockly.registry.Type.RENDERER, RENDERER)) {
     Blockly.blockRendering.register(RENDERER, BetaRenderer);
   }
@@ -357,6 +359,58 @@ export function defineBlocks(): void {
       tooltip: "Apaga tudo que está no visor.",
     },
     {
+      type: "oled_pixel_on",
+      message0: "pintar pixel x %1 y %2",
+      args0: [
+        { type: "input_value", name: "X", check: "Number" },
+        { type: "input_value", name: "Y", check: "Number" },
+      ],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: OLED_COLOUR,
+      tooltip:
+        "Acende um pixel do visor. x vai de 0 (esquerda) a 127 (direita) e y de 0 (embaixo) a 63 (em cima). " +
+        "Use com 'repetir' e contas para desenhar por código.",
+    },
+    {
+      type: "oled_pixel_off",
+      message0: "apagar pixel x %1 y %2",
+      args0: [
+        { type: "input_value", name: "X", check: "Number" },
+        { type: "input_value", name: "Y", check: "Number" },
+      ],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: OLED_COLOUR,
+      tooltip: "Apaga um pixel do visor. x vai de 0 (esquerda) a 127 (direita) e y de 0 (embaixo) a 63 (em cima).",
+    },
+    {
+      type: "oled_line_to",
+      message0: "traçar até x %1 y %2",
+      args0: [
+        { type: "input_value", name: "X", check: "Number" },
+        { type: "input_value", name: "Y", check: "Number" },
+      ],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: OLED_COLOUR,
+      tooltip:
+        "Desenha uma linha do último ponto traçado até este, como uma caneta que não sai do papel: " +
+        "o traço fica contínuo mesmo mexendo rápido (ex.: x e y vindo de dois potenciômetros). " +
+        "x vai de 0 (esquerda) a 127 (direita) e y de 0 (embaixo) a 63 (em cima).",
+    },
+    {
+      type: "oled_pen_up",
+      message0: "levantar caneta",
+      previousStatement: null,
+      nextStatement: null,
+      colour: OLED_COLOUR,
+      tooltip: "O próximo 'traçar até' começa um traço novo, sem ligar ao ponto anterior.",
+    },
+    {
       type: "oled_snake",
       message0: "🐍 jogo da cobrinha",
       previousStatement: null,
@@ -522,6 +576,14 @@ export function defineBlocks(): void {
     return `visor_desenho('${(block as DrawBlock).bitmapB64}')\n`;
   };
 
+  // "alterar x por 1": o do Blockly usa "from numbers import Number", que o MicroPython não tem.
+  // Variável ainda sem valor (ou com texto) conta como 0.
+  pythonGenerator.forBlock["math_change"] = (block, gen) => {
+    const v = gen.getVariableName(block.getFieldValue("VAR"));
+    const delta = gen.valueToCode(block, "DELTA", Order.ADDITIVE) || "0";
+    return `${v} = (${v} if isinstance(${v}, (int, float)) else 0) + ${delta}\n`;
+  };
+
   pythonGenerator.forBlock["event_start"] = () => "";
   pythonGenerator.forBlock["event_key"] = () => "";
   pythonGenerator.forBlock["event_button"] = () => "";
@@ -625,6 +687,19 @@ export function defineBlocks(): void {
     return `visor_grafico(${v})\n`;
   };
   pythonGenerator.forBlock["oled_clear"] = () => "visor_limpar()\n";
+  for (const [tipo, cor] of [["oled_pixel_on", 1], ["oled_pixel_off", 0]] as const) {
+    pythonGenerator.forBlock[tipo] = (block, gen) => {
+      const x = gen.valueToCode(block, "X", Order.NONE) || "0";
+      const y = gen.valueToCode(block, "Y", Order.NONE) || "0";
+      return `visor_pixel(${x}, ${y}, ${cor})\n`;
+    };
+  }
+  pythonGenerator.forBlock["oled_line_to"] = (block, gen) => {
+    const x = gen.valueToCode(block, "X", Order.NONE) || "0";
+    const y = gen.valueToCode(block, "Y", Order.NONE) || "0";
+    return `visor_tracar(${x}, ${y})\n`;
+  };
+  pythonGenerator.forBlock["oled_pen_up"] = () => "visor_levantar_caneta()\n";
   pythonGenerator.forBlock["oled_snake"] = () => "_jogo_rodar(visor_cobrinha)\n";
   pythonGenerator.forBlock["oled_dino"] = () => "_jogo_rodar(visor_dino)\n";
   pythonGenerator.forBlock["oled_flappy"] = () => "_jogo_rodar(visor_flappy)\n";
@@ -935,6 +1010,7 @@ export function preamble(pin: number): string {
     "_bb_cortar = False",
     "_bb_ler_radio = None  # le as mensagens que chegaram (so com blocos de radio)",
     "_bb_ler_entradas = None  # confere botoes e limites dos blocos 'quando clicar botao' e 'passar de'",
+    "_bb_visor = None  # manda para a tela os pixels pintados/apagados (blocos 'pintar pixel')",
     "",
     "def _bb_rodar_fila():",
     "    global _bb_na_fila, _bb_cortar",
@@ -977,6 +1053,8 @@ export function preamble(pin: number): string {
     "            _bb_ler_radio()",
     "        if _bb_ler_entradas:",
     "            _bb_ler_entradas()",
+    "        if _bb_visor:",
+    "            _bb_visor()",
     "    if _bb_na_fila is not None:",
     "        if _bb_cortar or _bb_pendente is not None:",
     "            raise _BBInterrompe()",
@@ -1092,6 +1170,11 @@ export function programCode(workspace: Blockly.Workspace): string {
   const tops = workspace.getTopBlocks(true);
   let code = "";
 
+  // cada evento vira uma função Python: sem "global", "definir x" lá dentro criaria outro x,
+  // só daquela função, e o resto do programa não veria a mudança
+  const variaveis = workspace.getVariableMap().getAllVariables().map((v) => pythonGenerator.getVariableName(v.getId()));
+  const globais = variaveis.length ? `global ${variaveis.join(", ")}\n` : "";
+
   // "quando apertar a tecla": cada pilha vira uma função registrada em _teclas
   const keyHats = tops.filter((b) => b.type === "event_key");
   const jogos = gameKeys(workspace).size > 0;
@@ -1106,6 +1189,7 @@ export function programCode(workspace: Blockly.Workspace): string {
     const next = hat.getNextBlock();
     let body = next ? pythonGenerator.blockToCode(next) : "";
     if (Array.isArray(body)) body = body[0];
+    body = globais + body;
     const key = hat.getFieldValue("KEY");
     code += `def _tecla_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
     code += `_teclas[${JSON.stringify(key)}] = _bb_evento(_tecla_${i})\n\n`;
@@ -1116,6 +1200,7 @@ export function programCode(workspace: Blockly.Workspace): string {
     const next = hat.getNextBlock();
     let body = next ? pythonGenerator.blockToCode(next) : "";
     if (Array.isArray(body)) body = body[0];
+    body = globais + body;
     const pin = Math.round(Number(hat.getFieldValue("PIN")) || 0);
     code += `def _botao_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
     code += `_botoes.append((${pin}, _bb_evento(_botao_${i})))\n\n`;
@@ -1126,6 +1211,7 @@ export function programCode(workspace: Blockly.Workspace): string {
     const next = hat.getNextBlock();
     let body = next ? pythonGenerator.blockToCode(next) : "";
     if (Array.isArray(body)) body = body[0];
+    body = globais + body;
     const pin = Math.round(Number(hat.getFieldValue("PIN")) || 0);
     const limite = Math.min(100, Math.max(0, Number(hat.getFieldValue("LIMIT")) || 0));
     code += `def _limite_${i}():\n${pythonGenerator.prefixLines(body || pythonGenerator.PASS, pythonGenerator.INDENT)}`;
@@ -1137,6 +1223,7 @@ export function programCode(workspace: Blockly.Workspace): string {
     const next = hat.getNextBlock();
     let body = next ? pythonGenerator.blockToCode(next) : "";
     if (Array.isArray(body)) body = body[0];
+    body = globais + body;
     // o campo do chapéu filtra a mensagem (vazio: qualquer uma)
     let filtro = "None";
     if (hat.type === "radio_on_number") {
@@ -1157,6 +1244,8 @@ export function programCode(workspace: Blockly.Workspace): string {
     if (Array.isArray(c)) c = c[0];
     if (c) code += c;
   }
+  // pixels pintados no fim do "ao iniciar" vão para a tela (sem esperar o próximo _bb_ponto)
+  code += "_visor_pixels_na_tela()\n";
 
   // com teclas, botões ou rádio, o programa precisa continuar vivo para receber os eventos
   if (keyHats.length > 0 || buttonHats.length > 0 || thresholdHats.length > 0 || radioHats.length > 0) {
@@ -1959,7 +2048,8 @@ export function oledCode(): string {
     "_vis_timer.init(period=100, mode=Timer.PERIODIC, callback=_bb_protegido(_visor_flush))",
     "",
     "def _visor_mostrar():",
-    "    global _vis_dirty, _vis_quadro",
+    "    global _vis_dirty, _vis_quadro, _vis_pixels",
+    "    _vis_pixels = False",
     "    oled.show()",
     "    if _vis_quadro is None or len(_vis_quadro) != len(oled.buffer):",
     "        _vis_quadro = bytearray(len(oled.buffer))",
@@ -2019,6 +2109,41 @@ export function oledCode(): string {
     "        oled.text(l, 0, y * 8, 1)",
     "        y += 1",
     "    _visor_mostrar()",
+    "",
+    "# 'pintar/apagar pixel' so muda a memoria: mandar a tela inteira leva ~25 ms, entao ela vai",
+    "# de uma vez no proximo _bb_ponto (no maximo a cada 20 ms) ou no fim do 'ao iniciar'",
+    "_vis_pixels = False  # tem pixel mudado que ainda nao foi para a tela",
+    "",
+    "def visor_pixel(x, y, cor):",
+    "    global _vis_pixels",
+    "    _visor_garantir()",
+    "    # y cresce para cima, como num grafico (na tela, a linha 0 e a de cima)",
+    "    oled.pixel(int(x), oled.height - 1 - int(y), cor)  # fora da tela (x 0..127, y 0..63) e ignorado",
+    "    _vis_pixels = True",
+    "",
+    "# caneta do 'tracar ate': ultimo ponto tracado (na tela), ou None com a caneta levantada",
+    "_vis_caneta = None",
+    "",
+    "def visor_tracar(x, y):",
+    "    global _vis_caneta, _vis_pixels",
+    "    _visor_garantir()",
+    "    p = (int(x), oled.height - 1 - int(y))  # y cresce para cima, como no 'pintar pixel'",
+    "    if _vis_caneta is None:",
+    "        oled.pixel(p[0], p[1], 1)",
+    "    else:",
+    "        oled.line(_vis_caneta[0], _vis_caneta[1], p[0], p[1], 1)  # linha de 1 px, sem buracos",
+    "    _vis_caneta = p",
+    "    _vis_pixels = True",
+    "",
+    "def visor_levantar_caneta():",
+    "    global _vis_caneta",
+    "    _vis_caneta = None",
+    "",
+    "def _visor_pixels_na_tela():",
+    "    if _vis_pixels:",
+    "        _visor_mostrar()",
+    "",
+    "_bb_visor = _visor_pixels_na_tela",
     "",
     "def visor_limpar():",
     "    _visor_garantir()",
@@ -2291,6 +2416,31 @@ export const toolbox = {
         },
         { kind: "block", type: "oled_clear" },
         { kind: "block", type: "oled_draw" },
+        {
+          kind: "block",
+          type: "oled_pixel_on",
+          inputs: {
+            X: { shadow: { type: "math_number", fields: { NUM: 64 } } },
+            Y: { shadow: { type: "math_number", fields: { NUM: 32 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "oled_pixel_off",
+          inputs: {
+            X: { shadow: { type: "math_number", fields: { NUM: 64 } } },
+            Y: { shadow: { type: "math_number", fields: { NUM: 32 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "oled_line_to",
+          inputs: {
+            X: { shadow: { type: "math_number", fields: { NUM: 64 } } },
+            Y: { shadow: { type: "math_number", fields: { NUM: 32 } } },
+          },
+        },
+        { kind: "block", type: "oled_pen_up" },
       ],
     },
     {
@@ -2429,8 +2579,8 @@ export const toolbox = {
         },
       ],
     },
-    // Categorias desativadas por enquanto (descomente para reativar):
-    // { kind: "category", name: "Variáveis", colour: 330, custom: "VARIABLE" },
+    // "criar variável", "definir", "alterar por" e o bloco redondo de cada variável (do Blockly)
+    { kind: "category", name: "Variáveis", colour: VARIABLE_COLOUR, custom: "VARIABLE" },
   ],
 };
 
