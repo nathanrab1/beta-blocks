@@ -488,14 +488,20 @@ export function defineBlocks(): void {
     },
     {
       type: "oled_plot",
-      message0: "plotar no visor %1",
-      args0: [{ type: "input_value", name: "VALUE", check: "Number" }],
+      // SCALE veio depois: nos blocos antigos fica o primeiro item (0 a 100%)
+      message0: "plotar no visor %1 escala %2",
+      args0: [
+        { type: "input_value", name: "VALUE", check: "Number" },
+        { type: "field_dropdown", name: "SCALE", options: [["0 a 100%", "P"], ["0 a 50 °C", "C"]] },
+      ],
+      inputsInline: true,
       previousStatement: null,
       nextStatement: null,
       colour: OLED_COLOUR,
       tooltip:
-        "Desenha um gráfico do valor (0 a 100%) ao longo do tempo. Cada vez que o bloco roda, adiciona um ponto; " +
-        "use dentro de 'repetir para sempre' com um 'esperar'.",
+        "Desenha um gráfico do valor ao longo do tempo. Cada vez que o bloco roda, adiciona um ponto; " +
+        "use dentro de 'repetir para sempre' com um 'esperar'. Escala 0 a 100% para portas e umidade; " +
+        "0 a 50 °C para a temperatura do DHT11. Valores fora da escala encostam na borda.",
     },
     {
       type: "oled_clear",
@@ -1016,7 +1022,7 @@ export function defineBlocks(): void {
 
   pythonGenerator.forBlock["oled_plot"] = (block, gen) => {
     const v = gen.valueToCode(block, "VALUE", Order.NONE) || "0";
-    return `visor_grafico(${v})\n`;
+    return block.getFieldValue("SCALE") === "C" ? `visor_grafico(${v}, 'C')\n` : `visor_grafico(${v})\n`;
   };
   pythonGenerator.forBlock["oled_clear"] = () => "visor_limpar()\n";
   for (const [tipo, cor] of [["oled_pixel_on", 1], ["oled_pixel_off", 0]] as const) {
@@ -3348,6 +3354,15 @@ const LOGO_PINGO = "106,21,107,21,105,22,106,22,107,22,108,22,104,23,105,23,106,
 const LOGO_LETRAS = "22,42,56,76,102,109,124";
 
 /**
+ * A fonte do visor (framebuf do MicroPython) só tem os caracteres ASCII, e o text() desenha byte a
+ * byte: um "°" ou "ã" (2 bytes em UTF-8) virava dois símbolos errados. Letras acentuadas viram a
+ * letra sem acento e o "°" tem desenho próprio. No Python ficam como \uXXXX: o programa é só ASCII.
+ */
+const ACENTOS = "áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ";
+const SEM_ACENTO = "aaaaaeeeeiiiiooooouuuucnAAAAAEEEEIIIIOOOOOUUUUCN";
+const pyUnicode = (t: string) => [...t].map((c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+
+/**
  * Funções auxiliares do visor OLED (precisa do arquivo ssd1306.py na placa).
  * A tela fica sempre ligada nas portas 8 (SDA) e 9 (SCL): todo programa já começa com ela.
  * Sem o OLED físico, usa um visor virtual na memória; em ambos os casos o
@@ -3418,6 +3433,24 @@ export function oledCode(): string {
     "    if oled is None:",
     "        visor_iniciar(8, 9, 128, 64)",
     "",
+    "# a fonte do visor so tem ASCII: acentos viram a letra sem acento e o grau tem desenho proprio",
+    `_VISOR_ACENTOS = '${pyUnicode(ACENTOS)}'`,
+    `_VISOR_SEM = '${SEM_ACENTO}'`,
+    "_VISOR_GLIFOS = {'\\u00b0': (0x30, 0x48, 0x48, 0x30, 0, 0, 0, 0)}  # grau: uma bolinha no alto",
+    "",
+    "def _visor_escrever(txt, x, y):",
+    "    for ch in txt:",
+    "        g = _VISOR_GLIFOS.get(ch)",
+    "        if g:",
+    "            for r in range(8):",
+    "                for c in range(8):",
+    "                    if g[r] & (0x80 >> c):",
+    "                        oled.pixel(x + c, y + r, 1)",
+    "        else:",
+    "            i = _VISOR_ACENTOS.find(ch)",
+    "            oled.text(_VISOR_SEM[i] if i >= 0 else ch, x, y, 1)",
+    "        x += 8",
+    "",
     "def visor_texto(txt, linha):",
     "    _visor_garantir()",
     "    cols = oled.width // 8",
@@ -3445,7 +3478,7 @@ export function oledCode(): string {
     "        if y >= max_linhas:",
     "            break",
     "        oled.fill_rect(0, y * 8, oled.width, 8, 0)",
-    "        oled.text(l, 0, y * 8, 1)",
+    "        _visor_escrever(l, 0, y * 8)",
     "        y += 1",
     "    _visor_mostrar()",
     "",
@@ -3497,6 +3530,7 @@ export function oledCode(): string {
     "    '9': '###|#.#|###|..#|###', '%': '#.#|..#|.#.|#..|#.#', 's': '.##|#..|.#.|..#|##.',",
     "    't': '.#.|###|.#.|.#.|..#', 'e': '###|#.#|###|#..|###', 'm': '#.#|###|#.#|#.#|#.#',",
     "    'p': '##.|#.#|##.|#..|#..', 'o': '###|#.#|#.#|#.#|###',",
+    "    'C': '###|#..|#..|#..|###', '^': '###|#.#|###|...|...',  # ^ = grau (°)",
     "}",
     "",
     "def _visor_mini(txt, x, y, alvo=None):",
@@ -3510,18 +3544,21 @@ export function oledCode(): string {
     "                        alvo.pixel(x + c, y + r, 1)",
     "        x += 4",
     "",
-    "# grafico: um ponto por chamada, eixo Y em % e eixo X no tempo",
+    "# grafico: um ponto por chamada, eixo Y na escala escolhida e eixo X no tempo",
+    "# escala 'P' = 0 a 100%, 'C' = 0 a 50 graus C. Os pontos ficam guardados em % da altura.",
     "_graf = []",
     "_graf_t0 = None",
-    "_graf_fundo = None  # (largura, altura, bytes) dos eixos e rotulos fixos",
+    "_graf_fundo = None  # (largura, altura, escala, bytes) dos eixos e rotulos fixos",
+    "_GRAF_ESCALAS = {'P': (100, ('100%', '50%', '0%')), 'C': (50, ('50^C', '25^C', '0^C'))}",
     "",
-    "def visor_grafico(v):",
+    "def visor_grafico(v, escala='P'):",
     "    global _graf_t0, _graf_fundo",
     "    _visor_garantir()",
     "    if _graf_t0 is None:",
     "        _graf_t0 = time.ticks_ms()",
+    "    maximo, rotulos = _GRAF_ESCALAS.get(escala, _GRAF_ESCALAS['P'])",
     "    try:",
-    "        v = max(0, min(100, float(v)))",
+    "        v = max(0, min(maximo, float(v))) * 100 / maximo  # fora da escala: encosta na borda",
     "    except (TypeError, ValueError):",
     "        v = 0",
     "    alto = oled.height >= 64",
@@ -3532,21 +3569,23 @@ export function oledCode(): string {
     "    _graf.append(v)",
     "    if len(_graf) > W:",
     "        del _graf[0]",
-    "    if _graf_fundo is None or _graf_fundo[:2] != (oled.width, oled.height):",
+    "    if _graf_fundo is None or _graf_fundo[:3] != (oled.width, oled.height, escala):",
     "        buf = bytearray(len(oled.buffer))",
     "        f = framebuf.FrameBuffer(buf, oled.width, oled.height, framebuf.MONO_VLSB)",
     "        f.vline(X0 - 1, Y0, Y1 - Y0 + 1, 1)  # eixo %",
     "        f.hline(X0 - 1, Y1, W + 1, 1)        # eixo tempo",
-    "        _visor_mini('100%', 0, Y0 - 2 if alto else 0, f)",
-    "        _visor_mini('0%', 8, Y1 - 4, f)",
+    "        topo, meio, base = rotulos  # alinhados a direita, colados no eixo",
+    "        _visor_mini(topo, X0 - 1 - len(topo) * 4, Y0 - 2 if alto else 0, f)",
+    "        _visor_mini(base, X0 - 1 - len(base) * 4, Y1 - 4, f)",
     "        if alto:",
-    "            _visor_mini('50%', 4, (Y0 + Y1) // 2 - 2, f)",
-    "            f.hline(X0 - 3, (Y0 + Y1) // 2, 2, 1)",
+    "            _visor_mini(meio, X0 - 1 - len(meio) * 4, (Y0 + Y1) // 2 - 2, f)",
+    "            if len(meio) < 4:  # marquinha do meio, se couber ao lado do rotulo",
+    "                f.hline(X0 - 3, (Y0 + Y1) // 2, 2, 1)",
     "        _visor_mini('tempo', X0, Y1 + 2, f)",
     "        for i in range(10, W, 10):  # marquinhas de tempo",
     "            f.pixel(X0 + i, Y1 - 1, 1)",
-    "        _graf_fundo = (oled.width, oled.height, buf)",
-    "    oled.buffer[:] = _graf_fundo[2]  # copia o fundo pronto (bem mais rapido que redesenhar)",
+    "        _graf_fundo = (oled.width, oled.height, escala, buf)",
+    "    oled.buffer[:] = _graf_fundo[3]  # copia o fundo pronto (bem mais rapido que redesenhar)",
     "    seg = '%ds' % (time.ticks_diff(time.ticks_ms(), _graf_t0) // 1000)",
     "    _visor_mini(seg, oled.width - len(seg) * 4 + 1, Y1 + 2)",
     "    py = None",
