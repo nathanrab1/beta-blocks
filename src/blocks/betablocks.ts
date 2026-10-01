@@ -68,6 +68,37 @@ const BURGUNDY =
   "E5:.333 F#5:.333 G5:.333 F#5:.333 E5:.333 D5:.333 C#5:.333 E5:.333 A4:1.333 R:.667 B5:.667 A5:.667 " +
   "F5:.667 F#5:.667 D5:2 F#5:.333 A5:.333 G5:1.333 A5:.667 G5:.667 E5:.667 G5:.667 E5:.667 G5:.667 " +
   "F#5:2.667";
+/** Multiplica a duração de cada nota (todas com ':'): a música fica mais lenta sem reescrever. */
+function esticar(notas: string, fator: number): string {
+  return notas.replace(/:([\d.]+)/g, (_, b: string) => `:${Number((Number(b) * fator).toFixed(3))}`);
+}
+/**
+ * Pavane (Fauré), melodia da mão direita do arranjo de Chris Sennett, um compasso por linha
+ * (compassos 2 a 20; o 1 é só introdução da mão esquerda). Nos acordes, a nota de cima.
+ * Escrita em batidas e esticada 1,5x: fica lenta como a peça (~80 por minuto) no ritmo padrão 120.
+ */
+const PAVANE = esticar(
+  "F#4:1.75 G#4:.25 A4:1.75 B4:.25 " +
+    "A4:.5 G#4:.5 A4:.5 F#4:.5 G#4:1.75 A4:.25 " +
+    "G#4:.5 F#4:.5 G#4:.5 E4:.5 F#4:1.5 E#4:.5 " +
+    "C#4:4 " +
+    "A4:1.75 B4:.25 C#5:1.75 D5:.25 " +
+    "C#5:.5 B4:.5 C#5:.5 A4:.5 B4:1.75 C#5:.25 " +
+    "B4:.5 A4:.5 B4:.5 G4:.5 A4:1.5 B#4:.5 " +
+    "C#5:3 R:1 " +
+    "F#4:1.75 G#4:.25 A4:1.75 B4:.25 " +
+    "A4:.5 G#4:.5 A4:.5 F#4:.5 G#4:1.75 A4:.25 " +
+    "G#4:.5 F#4:.5 G#4:.5 E4:.5 F#4:1.5 E#4:.5 " +
+    "C#4:4 " +
+    "A4:1.75 B4:.25 C#5:1.75 D5:.25 " +
+    "C#5:.5 B4:.5 C#5:.5 A4:.5 B4:1.75 C#5:.25 " +
+    "A4:.5 G#4:.5 A4:.5 F#4:.5 F#4:2 " +
+    "F#4:3 R:1 " +
+    "C#4:1.75 D#4:.25 E#4:1 D#4:.333 E#4:.333 F#4:.333 " +
+    "G#4:.5 F#4:.5 A4:.5 G#4:.5 E#4:1.5 D#4:.5 " +
+    "C#4:1.75 D#4:.25 E4:1 D#4:.333 E4:.333 F#4:.333",
+  1.5,
+);
 /** Sobe cada nota uma oitava ("A5:.667" vira "A6:.667"; pausas "R" ficam iguais). */
 function oitavaAcima(notas: string): string {
   return notas.replace(/([A-G]#?)(\d)/g, (_, nota: string, oitava: string) => `${nota}${Number(oitava) + 1}`);
@@ -87,6 +118,8 @@ const MELODIES: [string, string, string][] = [
     "F#5:.43 F#5:.43 F#5:.43 E5:.43 E5:.43 D5:1.72"],
   ["Burgundy Street Blues 1", "BURGUNDY", BURGUNDY],
   ["Burgundy Street Blues 2", "BURGUNDY2", oitavaAcima(BURGUNDY)],
+  ["Pavane (Fauré) 1", "PAVANE", PAVANE],
+  ["Pavane (Fauré) 2", "PAVANE2", oitavaAcima(PAVANE)],
   ["Beatles: Hey Jude (trecho)", "HEYJUDE",
     "G5 E5:2 R:.5 E5:.5 G5:.5 A5:.5 D5:2 R:.5 D5:.5 E5:.5 F5:.5 C6:1.5 C6:.5 B5:.5 G5:.5 A5:.5 G5:.5 F5:.5 E5:2.5"],
   ["Beatles: Yesterday (trecho)", "YESTERDAY",
