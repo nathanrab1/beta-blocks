@@ -183,8 +183,8 @@ const EFFECTS: [string, string, string][] = [
 ];
 const MELODY_OPTIONS: [string, string][] = MELODIES.map(([label, id]) => [label, id]);
 const EFFECT_OPTIONS: [string, string][] = EFFECTS.map(([label, id]) => [label, id]);
-// buzzer: porta 1, 2 ou 3 (a 12 virou o SDA do visor). Projetos antigos com outra porta abrem na 1.
-const somPinoField = { type: "field_dropdown", name: "PIN", options: PORTAS_1A3 };
+/** Pino fixo do buzzer: os blocos de Som não pedem pino (projetos antigos com PIN: o Blockly ignora). */
+const SOM_PINO = 13;
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
 const NAMED_COLORS: Record<string, [number, number, number]> = {
@@ -911,18 +911,17 @@ export function defineBlocks(): void {
     },
     {
       type: "sound_note",
-      message0: "tocar nota %1 %2 por %3 no pino %4",
+      message0: "tocar nota %1 %2 por %3",
       args0: [
         { type: "field_dropdown", name: "NOTE", options: NOTE_OPTIONS },
         { type: "field_dropdown", name: "OCTAVE", options: OCTAVE_OPTIONS },
         { type: "field_dropdown", name: "BEATS", options: BEAT_OPTIONS },
-        somPinoField,
       ],
       previousStatement: null,
       nextStatement: null,
       colour: SOUND_COLOUR,
       tooltip:
-        "Toca uma nota no buzzer ligado nesse pino e espera ela acabar. O número depois da nota é a oitava: " +
+        "Toca uma nota no buzzer (porta 13) e espera ela acabar. O número depois da nota é a oitava: " +
         "quanto maior, mais agudo (Lá 4 = 440 Hz). A duração segue o ritmo (120 batidas por minuto, se não mudar).",
     },
     {
@@ -946,11 +945,10 @@ export function defineBlocks(): void {
     },
     {
       type: "sound_hz",
-      message0: "tocar %1 Hz por %2 ms no pino %3",
+      message0: "tocar %1 Hz por %2 ms",
       args0: [
         { type: "input_value", name: "HZ", check: "Number" },
         { type: "input_value", name: "MS", check: "Number" },
-        somPinoField,
       ],
       inputsInline: true,
       previousStatement: null,
@@ -960,29 +958,27 @@ export function defineBlocks(): void {
     },
     {
       type: "sound_start",
-      message0: "começar a tocar %1 Hz no pino %2",
-      args0: [{ type: "input_value", name: "HZ", check: "Number" }, somPinoField],
+      message0: "começar a tocar %1 Hz",
+      args0: [{ type: "input_value", name: "HZ", check: "Number" }],
       inputsInline: true,
       previousStatement: null,
       nextStatement: null,
       colour: SOUND_COLOUR,
-      tooltip: "Liga o som nessa frequência e segue o programa: ele só para com \"parar o som\" (ou outro som no mesmo pino).",
+      tooltip: "Liga o som nessa frequência e segue o programa: ele só para com \"parar o som\" (ou outro som).",
     },
     {
       type: "sound_stop",
-      message0: "parar o som no pino %1",
-      args0: [somPinoField],
+      message0: "parar o som",
       previousStatement: null,
       nextStatement: null,
       colour: SOUND_COLOUR,
-      tooltip: "Desliga o som desse pino (inclusive uma melodia em segundo plano).",
+      tooltip: "Desliga o som do buzzer (inclusive uma melodia em segundo plano).",
     },
     {
       type: "sound_melody",
-      message0: "tocar melodia %1 no pino %2 %3",
+      message0: "tocar melodia %1 %2",
       args0: [
         { type: "field_dropdown", name: "MELODY", options: MELODY_OPTIONS },
-        somPinoField,
         { type: "field_dropdown", name: "MODE", options: [["até o fim", "FIM"], ["em segundo plano", "FUNDO"]] },
       ],
       previousStatement: null,
@@ -994,10 +990,9 @@ export function defineBlocks(): void {
     },
     {
       type: "sound_effect",
-      message0: "tocar efeito %1 no pino %2 %3",
+      message0: "tocar efeito %1 %2",
       args0: [
         { type: "field_dropdown", name: "MELODY", options: EFFECT_OPTIONS },
-        somPinoField,
         { type: "field_dropdown", name: "MODE", options: [["até o fim", "FIM"], ["em segundo plano", "FUNDO"]] },
       ],
       previousStatement: null,
@@ -1188,7 +1183,7 @@ export function defineBlocks(): void {
 
   pythonGenerator.forBlock["led_off"] = () => "led_rgb(0, 0, 0)\n";
 
-  const somPino = (block: Blockly.Block) => Math.round(Number(block.getFieldValue("PIN")) || 0);
+  const somPino = (_block: Blockly.Block) => SOM_PINO; // buzzer fixo na porta 13
   pythonGenerator.forBlock["sound_note"] = (block) => {
     const semi = Number(block.getFieldValue("NOTE"));
     const oct = Number(block.getFieldValue("OCTAVE"));
@@ -1499,8 +1494,6 @@ function defineComposeBlock() {
         .appendField("tocar")
         .appendField(preview, "PREVIEW")
         .appendField(editButton, "EDIT")
-        .appendField("no pino")
-        .appendField(new Blockly.FieldDropdown(PORTAS_1A3), "PIN")
         .appendField(new Blockly.FieldDropdown([["até o fim", "FIM"], ["em segundo plano", "FUNDO"]]), "MODE");
       this.setPreviousStatement(true);
       this.setNextStatement(true);
@@ -2023,11 +2016,7 @@ function soundCode(workspace: Blockly.Workspace): string {
     "    pino = int(pino)",
     "    p = _pwms.get(pino)",
     "    if p is None:",
-    "        try:  # forca maxima do pino (~40 mA; o padrao e ~20 mA): o buzzer soa mais alto",
-    "            saida = Pin(pino, Pin.OUT, drive=Pin.DRIVE_3)",
-    "        except (AttributeError, TypeError, ValueError):",
-    "            saida = Pin(pino)",
-    "        p = PWM(saida, freq=440, duty_u16=0)",
+    "        p = PWM(Pin(pino), freq=440, duty_u16=0)",
     "        _pwms[pino] = p",
     "    return p",
     "",
