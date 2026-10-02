@@ -359,6 +359,15 @@ workspace.addChangeListener((e) => {
   setStatus("Só pode haver um 'ao iniciar'. Os blocos colados ficaram soltos.", "error");
 });
 
+// o "ao iniciar" não pode ser apagado (setDeletable em ensureStartBlock); se mesmo assim sumir
+// (desfazer, algum caminho do Blockly), volta na hora
+workspace.addChangeListener((e) => {
+  if (e.type !== Blockly.Events.BLOCK_DELETE) return;
+  if ((e as Blockly.Events.BlockDelete).oldJson?.type !== "event_start") return;
+  if (workspace.getTopBlocks(false).some((b) => b.type === "event_start")) return;
+  ensureStartBlock();
+});
+
 workspace.addChangeListener((e) => {
   if (e.isUiEvent) return;
   updateCode();
@@ -415,6 +424,24 @@ $("btn-save").addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(url);
   setStatus(`Projeto salvo: ${a.download}`, "ok");
+});
+
+// limpar: apaga tudo (blocos e variáveis) e deixa só o "ao iniciar"; Ctrl+Z desfaz de uma vez
+$("btn-clear").addEventListener("click", () => {
+  if (workspace.getAllBlocks(false).length <= 1) {
+    setStatus("O espaço já está limpo", "ok");
+    return;
+  }
+  if (!confirm("Apagar todos os blocos? Fica só o 'ao iniciar'.")) return;
+  Blockly.Events.setGroup(true);
+  try {
+    workspace.clear();
+    ensureStartBlock();
+  } finally {
+    Blockly.Events.setGroup(false);
+  }
+  workspace.scrollCenter();
+  setStatus("Blocos apagados (Ctrl+Z desfaz)", "ok");
 });
 
 const fileLoad = $<HTMLInputElement>("file-load");
