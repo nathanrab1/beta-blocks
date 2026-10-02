@@ -1744,6 +1744,15 @@ export function preamble(pin: number): string {
     "",
     "led_rgb(0, 0, 0)  # comeca sempre com o LED apagado",
     "",
+    "# portas que nenhum bloco usa ficam em 0 V: soltas (flutuando) elas captam o sinal de outras",
+    "# portas (ex.: o buzzer) e um modulo ligado nelas acendia junto",
+    "def _bb_zerar(portas):",
+    "    for n in portas:",
+    "        try:",
+    "            Pin(n, Pin.OUT, value=0)",
+    "        except Exception:",
+    "            pass",
+    "",
     "def porta_ligar(n, on):",
     "    if n in _pwms:",
     "        _pwms.pop(n).deinit()",
@@ -1835,10 +1844,30 @@ export function eventKeys(workspace: Blockly.Workspace): Set<string> {
 }
 
 /** Gera o código só das pilhas penduradas em eventos; blocos soltos são ignorados. */
+/** Portas dos módulos (1–3) e dos motores (4–7): as que o programa não usa começam em 0 V. */
+const PORTAS_ZERAR = [1, 2, 3, 4, 5, 6, 7];
+const CAMPOS_PORTA = ["PIN", "PIN2", "PULAR", "AGACHAR", "VOAR", "ATIRAR"];
+
+function portasUsadas(workspace: Blockly.Workspace): Set<number> {
+  const usadas = new Set<number>();
+  for (const b of programBlocks(workspace)) {
+    for (const campo of CAMPOS_PORTA) {
+      if (b.getField(campo)) usadas.add(Number(b.getFieldValue(campo)));
+    }
+    if (b.getField("MOTOR")) {
+      const m = Number(b.getFieldValue("MOTOR"));
+      for (const n of m === 2 ? [6, 7] : [4, 5]) usadas.add(n);
+    }
+  }
+  return usadas;
+}
+
 export function programCode(workspace: Blockly.Workspace): string {
   pythonGenerator.init(workspace);
   const tops = workspace.getTopBlocks(true);
-  let code = "";
+  const usadas = portasUsadas(workspace);
+  const livres = PORTAS_ZERAR.filter((n) => !usadas.has(n));
+  let code = livres.length ? `_bb_zerar((${livres.join(", ")}${livres.length === 1 ? "," : ""}))\n` : "";
 
   // cada evento vira uma função Python: sem "global", "definir x" lá dentro criaria outro x,
   // só daquela função, e o resto do programa não veria a mudança
