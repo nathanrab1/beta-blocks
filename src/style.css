@@ -325,3 +325,8 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
 
 /* aviso no topo da categoria Rádio (label "bb-aviso" em betablocks.ts) */
 .bb-aviso .blocklyFlyoutLabelText { fill: #9b3a3a; font-weight: 700; }
+
+/* celular e tablet: sem "Gravar MicroPython" (gravar o firmware é pelo computador) */
+@media (max-width: 600px), (pointer: coarse) {
+  #btn-flash { display: none !important; }
+}

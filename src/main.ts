@@ -522,6 +522,7 @@ function updateDriveButtons() {
   const email = rememberedEmail();
   $("btn-drive-connect").hidden = email !== null;
   $("btn-drive-save").hidden = email === null;
+  $("btn-drive-saveas-top").hidden = email === null;
   $("btn-drive-open").hidden = email === null;
   $("btn-drive-open").title = email ? `Projetos da pasta Beta Kit no Drive de ${email}` : "";
 }
@@ -532,7 +533,10 @@ $("btn-drive-connect").addEventListener("click", () =>
     setStatus(`Google Drive conectado: ${signedInEmail()}`, "ok");
   }),
 );
+// Salvar: por cima do projeto aberto (sem projeto do Drive aberto, pede o nome)
 $("btn-drive-save").addEventListener("click", () => withGoogle(() => saveToDrive(false)));
+// Salvar como: sempre pede o nome e cria outro arquivo
+$("btn-drive-saveas-top").addEventListener("click", () => withGoogle(() => saveToDrive(true)));
 
 $("btn-drive-open").addEventListener("click", () =>
   withGoogle(async () => {
