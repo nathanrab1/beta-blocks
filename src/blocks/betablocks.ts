@@ -346,6 +346,12 @@ export function defineBlocks(): void {
     };
     def.bbAmarelo = true;
   }
+  // DHT11: começa na porta 3
+  if (!Blockly.Extensions.isRegistered("porta_padrao_3")) {
+    Blockly.Extensions.register("porta_padrao_3", function (this: Blockly.Block) {
+      this.setFieldValue("3", "PIN");
+    });
+  }
   // invasores: atirar começa na porta 2 (a nave fica na 1)
   if (!Blockly.Extensions.isRegistered("invasores_portas")) {
     Blockly.Extensions.register("invasores_portas", function (this: Blockly.Block) {
@@ -407,7 +413,7 @@ export function defineBlocks(): void {
     {
       type: "event_button",
       message0: "quando clicar botão %1",
-      args0: [{ type: "field_number", name: "PIN", value: 1, min: 0, max: 48, precision: 1 }],
+      args0: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
       nextStatement: null,
       hat: "cap",
       colour: INPUT_COLOUR,
@@ -419,7 +425,7 @@ export function defineBlocks(): void {
       type: "event_threshold",
       message0: "quando valor porta %1 passar de %2",
       args0: [
-        { type: "field_number", name: "PIN", value: 1, min: 1, max: 20, precision: 1 },
+        { type: "field_dropdown", name: "PIN", options: PORTAS_1A3 },
         { type: "field_number", name: "LIMIT", value: 50, min: 0, max: 100, precision: 1 },
       ],
       nextStatement: null,
@@ -552,7 +558,7 @@ export function defineBlocks(): void {
             ["desligar", "OFF"],
           ],
         },
-        { type: "field_number", name: "PIN", value: 1, min: 0, max: 48, precision: 1 },
+        { type: "field_dropdown", name: "PIN", options: PORTAS_1A3 },
       ],
       previousStatement: null,
       nextStatement: null,
@@ -589,7 +595,7 @@ export function defineBlocks(): void {
       type: "port_pwm",
       message0: "porta %1 intensidade %2 %%",
       args0: [
-        { type: "field_number", name: "PIN", value: 1, min: 0, max: 48, precision: 1 },
+        { type: "field_dropdown", name: "PIN", options: PORTAS_1A3 },
         { type: "input_value", name: "PCT", check: "Number" },
       ],
       inputsInline: true,
@@ -601,7 +607,7 @@ export function defineBlocks(): void {
     {
       type: "input_digital",
       message0: "porta %1 está ligada",
-      args0: [{ type: "field_number", name: "PIN", value: 1, min: 0, max: 48, precision: 1 }],
+      args0: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
       output: "Boolean",
       colour: INPUT_COLOUR,
       tooltip: "Verdadeiro se a porta estiver recebendo 3,3 V (botão apertado, sensor ativo).",
@@ -609,7 +615,7 @@ export function defineBlocks(): void {
     {
       type: "input_analog",
       message0: "valor porta %1",
-      args0: [{ type: "field_number", name: "PIN", value: 1, min: 1, max: 20, precision: 1 }],
+      args0: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
       output: "Number",
       colour: INPUT_COLOUR,
       tooltip: "Lê um valor analógico (potenciômetro, LDR…) de 0 a 100%. Só portas 1 a 20.",
@@ -619,10 +625,11 @@ export function defineBlocks(): void {
       message0: "%1 do DHT11 porta %2",
       args0: [
         { type: "field_dropdown", name: "WHAT", options: [["temperatura (°C)", "T"], ["umidade (%)", "H"]] },
-        { type: "field_number", name: "PIN", value: 3, min: 0, max: 48, precision: 1 },
+        { type: "field_dropdown", name: "PIN", options: PORTAS_1A3 },
       ],
       output: "Number",
       colour: INPUT_COLOUR,
+      extensions: ["porta_padrao_3"], // começa na porta 3
       tooltip:
         "Lê o sensor DHT11 ligado nessa porta (fio de dados; + no 3,3 V e − no GND): temperatura em °C ou " +
         "umidade do ar em %. O sensor mede a cada 2 s; entre uma medida e outra vale a última.",

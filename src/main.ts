@@ -116,6 +116,16 @@ const workspace = Blockly.inject("blockly-div", {
   move: { scrollbars: true, drag: true, wheel: false },
 });
 
+// categoria Variáveis: a lista do Blockly, mas o "definir ... para" já vem com um 0 encaixado
+// (no Blockly ele vem vazio, e o espaço do número ficava sem nada para digitar)
+workspace.registerToolboxCategoryCallback("VARIABLE", (ws) =>
+  Blockly.Variables.flyoutCategory(ws).map((item) => {
+    const bloco = item as { kind?: string; type?: string; inputs?: object };
+    if (bloco.kind !== "block" || bloco.type !== "variables_set" || bloco.inputs) return item;
+    return { ...bloco, inputs: { VALUE: { shadow: { type: "math_number", fields: { NUM: 0 } } } } } as typeof item;
+  }),
+);
+
 // ---------- celular: menu ☰ e painel embaixo ----------
 {
   const toolbarEl = $("toolbar");
