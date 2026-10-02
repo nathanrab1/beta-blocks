@@ -29,6 +29,7 @@ class SSD1306(framebuf.FrameBuffer):
         self.external_vcc = external_vcc
         self.pages = self.height // 8
         self.buffer = bytearray(self.pages * self.width)
+        self._enviado = None  # copia do que a tela ja mostra (o show manda so o que mudou)
         super().__init__(self.buffer, self.width, self.height, framebuf.MONO_VLSB)
         self.init_display()
 
@@ -73,6 +74,12 @@ class SSD1306(framebuf.FrameBuffer):
         self.write_cmd(SET_COM_OUT_DIR | ((rotate & 1) << 3))
         self.write_cmd(SET_SEG_REMAP | (rotate & 1))
 
+    def write_cmds(self, cmds):
+        for c in cmds:
+            self.write_cmd(c)
+
+    # Beta Blocks: manda so a faixa de paginas (linhas de 8 px) que mudou desde o ultimo show.
+    # A tela inteira leva ~23 ms no I2C a 400 kHz; nos jogos boa parte dela fica igual.
     def show(self):
         x0 = 0
         x1 = self.width - 1
@@ -80,13 +87,27 @@ class SSD1306(framebuf.FrameBuffer):
             col_offset = (128 - self.width) // 2
             x0 += col_offset
             x1 += col_offset
-        self.write_cmd(SET_COL_ADDR)
-        self.write_cmd(x0)
-        self.write_cmd(x1)
-        self.write_cmd(SET_PAGE_ADDR)
-        self.write_cmd(0)
-        self.write_cmd(self.pages - 1)
-        self.write_data(self.buffer)
+        w = self.width
+        antes = self._enviado
+        if antes is None:
+            p0, p1 = 0, self.pages - 1
+        else:
+            p0 = p1 = -1
+            for p in range(self.pages):
+                a = p * w
+                if self.buffer[a:a + w] != antes[a:a + w]:
+                    if p0 < 0:
+                        p0 = p
+                    p1 = p
+            if p0 < 0:
+                return  # nada mudou
+        self.write_cmds((SET_COL_ADDR, x0, x1, SET_PAGE_ADDR, p0, p1))
+        a, b = p0 * w, (p1 + 1) * w
+        self.write_data(memoryview(self.buffer)[a:b])
+        if antes is None:
+            self._enviado = bytearray(self.buffer)
+        else:
+            antes[a:b] = self.buffer[a:b]
 
 
 class SSD1306_I2C(SSD1306):
@@ -101,6 +122,9 @@ class SSD1306_I2C(SSD1306):
         self.temp[0] = 0x80
         self.temp[1] = cmd
         self.i2c.writeto(self.addr, self.temp)
+
+    def write_cmds(self, cmds):  # varios comandos num envio so (byte de controle 0x00)
+        self.i2c.writeto(self.addr, b"\x00" + bytes(cmds))
 
     def write_data(self, buf):
         self.write_list[1] = buf
