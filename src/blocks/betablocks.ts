@@ -245,7 +245,7 @@ class FieldSliderInline extends Blockly.Field<number> {
   private static readonly MAX = 100;
   private knob: SVGCircleElement | null = null;
   private track: SVGRectElement | null = null;
-  /** Chamado a cada movimento da bolinha (o bloco do motor copia o valor para o número na hora). */
+  /** Chamado a cada movimento da bolinha (o bloco do motor copia o valor para o número ao lado). */
   onSlide: ((v: number) => void) | null = null;
 
   static override fromJson(config: Blockly.FieldConfig): FieldSliderInline {
@@ -367,28 +367,19 @@ export function defineBlocks(): void {
   if (!Blockly.registry.hasItem(Blockly.registry.Type.FIELD, "field_slider_inline")) {
     Blockly.fieldRegistry.register("field_slider_inline", FieldSliderInline);
   }
-  // motor: o slider e o número ao lado andam juntos (o número pode ser trocado por outro bloco).
-  // Slider -> número: na hora, a cada movimento. Número -> slider: pelo evento, só quando é o
-  // valor atual (os eventos chegam atrasados: um "77" velho chegando com a bolinha já em 100
-  // puxava o slider de volta e os dois terminavam diferentes).
+  // motor com slider: o slider e o número moram no mesmo bloco (nada encaixa ali), então um
+  // atualiza o outro na hora, sem depender dos eventos do Blockly (que chegam atrasados)
   if (!Blockly.Extensions.isRegistered("motor_slider_sync")) {
     Blockly.Extensions.register("motor_slider_sync", function (this: Blockly.Block) {
-      const numero = () => {
-        const num = this.getInputTargetBlock("SPEED");
-        return num?.isShadow() && num.getField("NUM") ? num : null;
+      const slider = this.getField("SLIDER") as FieldSliderInline;
+      const num = this.getField("NUM")!;
+      slider.onSlide = (v) => {
+        if (Number(num.getValue()) !== v) num.setValue(v);
       };
-      (this.getField("SLIDER") as FieldSliderInline).onSlide = (v) => {
-        const num = numero();
-        if (num && num.getFieldValue("NUM") !== String(v)) num.setFieldValue(String(v), "NUM");
-      };
-      this.setOnChange(function (this: Blockly.Block, e: Blockly.Events.Abstract) {
-        if (this.isInFlyout || e.type !== Blockly.Events.BLOCK_CHANGE) return;
-        const ev = e as Blockly.Events.BlockChange;
-        const num = numero();
-        if (!num || ev.blockId !== num.id || ev.name !== "NUM") return;
-        if (String(ev.newValue) !== String(num.getFieldValue("NUM"))) return; // aviso velho
-        const v = Math.round(Math.max(-100, Math.min(100, Number(num.getFieldValue("NUM")) || 0)));
-        if (this.getFieldValue("SLIDER") !== v) this.setFieldValue(v, "SLIDER");
+      num.setValidator((v: unknown) => {
+        const n = Math.round(Math.max(-100, Math.min(100, Number(v) || 0)));
+        if (slider.getValue() !== n) slider.setValue(n);
+        return n;
       });
     });
   }
@@ -566,12 +557,13 @@ export function defineBlocks(): void {
       tooltip: "Liga (3,3 V) ou desliga (0 V) uma porta GPIO.",
     },
     {
-      type: "motor_run",
+      // com slider: arrastar a bolinha ou digitar o número (um acompanha o outro); nada encaixa aqui
+      type: "motor_slider",
       message0: "motor %1 %2 %3 %%",
       args0: [
         { type: "field_dropdown", name: "MOTOR", options: [["M1", "1"], ["M2", "2"]] },
         { type: "field_slider_inline", name: "SLIDER", value: 0, min: -100, max: 100 },
-        { type: "input_value", name: "SPEED", check: "Number" },
+        { type: "field_number", name: "NUM", value: 0, min: -100, max: 100, precision: 1 },
       ],
       extensions: ["motor_slider_sync"],
       inputsInline: true,
@@ -579,11 +571,29 @@ export function defineBlocks(): void {
       nextStatement: null,
       colour: PORT_COLOUR,
       tooltip:
-        "Liga o motor de -100% a 100%. M1 usa as portas 4 e 5; M2, as portas 6 e 7. Positivo gira para um lado " +
-        "(força na primeira porta), negativo para o outro (força na segunda), 0% para. O número pode vir de outro " +
-        "bloco, como o potenciômetro.",
+        "Liga o motor de -100% a 100%: arraste a bolinha ou digite o número. M1 usa as portas 4 e 5; M2, as " +
+        "portas 6 e 7. Positivo gira para um lado (força na primeira porta), negativo para o outro (força na " +
+        "segunda), 0% para. Para usar uma variável ou um sensor, use o outro bloco do motor.",
     },
-    // número do motor (sombra do bloco acima): de -100 a 100, acompanha o slider
+    {
+      // sem slider: a velocidade vem do encaixe (número, variável, sensor, conta)
+      // (projetos antigos podem ter o campo SLIDER aqui: o Blockly ignora)
+      type: "motor_run",
+      message0: "motor %1 velocidade %2 %%",
+      args0: [
+        { type: "field_dropdown", name: "MOTOR", options: [["M1", "1"], ["M2", "2"]] },
+        { type: "input_value", name: "SPEED", check: "Number" },
+      ],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: PORT_COLOUR,
+      tooltip:
+        "Liga o motor com a velocidade que vier no encaixe, de -100% a 100% (ex.: uma variável ou o " +
+        "potenciômetro passando pelo 'converter'). M1 usa as portas 4 e 5; M2, as portas 6 e 7. " +
+        "Positivo gira para um lado, negativo para o outro, 0% para.",
+    },
+    // número do bloco do motor sem slider (sombra): de -100 a 100
     {
       type: "motor_pct",
       message0: "%1",
@@ -1218,9 +1228,10 @@ export function defineBlocks(): void {
     return `porta_pwm(${pin}, ${pct})\n`;
   };
 
+  pythonGenerator.forBlock["motor_slider"] = (block) =>
+    `motor(${block.getFieldValue("MOTOR")}, ${Number(block.getFieldValue("NUM")) || 0})\n`;
   pythonGenerator.forBlock["motor_run"] = (block, gen) => {
-    // encaixe vazio: vale o slider
-    const v = gen.valueToCode(block, "SPEED", Order.NONE) || String(block.getFieldValue("SLIDER") ?? 0);
+    const v = gen.valueToCode(block, "SPEED", Order.NONE) || "0";
     return `motor(${block.getFieldValue("MOTOR")}, ${v})\n`;
   };
   pythonGenerator.forBlock["motor_pct"] = (block) => {
@@ -4029,6 +4040,7 @@ export const toolbox = {
           type: "port_pwm",
           inputs: { PCT: { shadow: { type: "math_number", fields: { NUM: 50 } } } },
         },
+        { kind: "block", type: "motor_slider" },
         {
           kind: "block",
           type: "motor_run",
