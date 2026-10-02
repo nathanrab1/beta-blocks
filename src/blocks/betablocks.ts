@@ -1775,10 +1775,15 @@ export function preamble(pin: number): string {
     "        _pwms.pop(n).deinit()",
     "    Pin(n, Pin.OUT).value(on)",
     "",
-    "def porta_pwm(n, pct):",
+    "_pwm_freq = {}  # porta -> frequencia do PWM",
+    "",
+    "def porta_pwm(n, pct, freq=1000):",
     "    pct = max(0, min(100, pct))",
     "    if n not in _pwms:",
-    "        _pwms[n] = PWM(Pin(n), freq=1000)",
+    "        _pwms[n] = PWM(Pin(n), freq=freq)",
+    "    elif _pwm_freq.get(n) != freq:",
+    "        _pwms[n].freq(freq)",
+    "    _pwm_freq[n] = freq",
     "    _pwms[n].duty_u16(int(pct * 65535 // 100))",
     "",
     "# motores: cada um em duas portas (frente, tras). Positivo = PWM na primeira e a segunda",
@@ -1791,12 +1796,13 @@ export function preamble(pin: number): string {
     "        pct = max(-100, min(100, float(pct)))",
     "    except (TypeError, ValueError):",
     "        pct = 0",
+    "    # PWM a 20 kHz: acima do que se ouve (a 1 kHz o motor chiava e o buzzer zumbia junto)",
     "    if pct > 0:",
     "        porta_ligar(b, 0)",
-    "        porta_pwm(a, pct)",
+    "        porta_pwm(a, pct, 20000)",
     "    elif pct < 0:",
     "        porta_ligar(a, 0)",
-    "        porta_pwm(b, -pct)",
+    "        porta_pwm(b, -pct, 20000)",
     "    else:",
     "        porta_ligar(a, 0)",
     "        porta_ligar(b, 0)",
@@ -1883,7 +1889,9 @@ export function programCode(workspace: Blockly.Workspace): string {
   pythonGenerator.init(workspace);
   const tops = workspace.getTopBlocks(true);
   const usadas = portasUsadas(workspace);
-  const livres = PORTAS_ZERAR.filter((n) => !usadas.has(n));
+  // sem bloco de Som, a porta do buzzer também fica em 0 V (solta, ela zumbia com o PWM do motor)
+  const temSom = programBlocks(workspace).some((b) => b.type.startsWith("sound_"));
+  const livres = [...PORTAS_ZERAR, ...(temSom ? [] : [SOM_PINO])].filter((n) => !usadas.has(n));
   let code = livres.length ? `_bb_zerar((${livres.join(", ")}${livres.length === 1 ? "," : ""}))\n` : "";
 
   // cada evento vira uma função Python: sem "global", "definir x" lá dentro criaria outro x,
