@@ -301,7 +301,7 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
 .melody-hint { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
 .melody-grid {
   display: grid; grid-template-columns: auto repeat(8, 44px); gap: 6px; align-items: center;
-  padding: 14px; background: #a8a9cc; border-radius: 10px;
+  padding: 14px; background: #7aa3b5; border-radius: 10px;
 }
 .melody-note { color: #fff; font-weight: 700; font-size: 13px; text-align: right; padding-right: 4px; }
 .melody-note small { font-weight: 400; opacity: 0.8; margin-left: 1px; }
@@ -322,3 +322,6 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
   }
   .melody-cell { width: 100%; height: min(34px, calc((100dvh - 140px) / 9 - 4px)); }
 }
+
+/* aviso no topo da categoria Rádio (label "bb-aviso" em betablocks.ts) */
+.bb-aviso .blocklyFlyoutLabelText { fill: #9b3a3a; font-weight: 700; }

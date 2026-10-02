@@ -15,21 +15,24 @@ const PALETA = {
   grafite: "#444444",
   preto: "#2e2e2e",
   cinza: "#adb0b5",
+  roxo: "#6e4b8f", // mesmo tom fechado do vermelho e do marinho
+  rosa: "#b5527f",
+  turquesa: "#3a8f8a",
 };
 const EVENT_COLOUR = PALETA.verde; // "ao iniciar" e eventos
 const LED_COLOUR = PALETA.vermelho;
 const TIME_COLOUR = PALETA.amarelo;
 const CONTROL_COLOUR = PALETA.amarelo;
-const PORT_COLOUR = PALETA.marinho;
-const INPUT_COLOUR = PALETA.azul;
-const OLED_COLOUR = PALETA.grafite;
+const PORT_COLOUR = PALETA.vermelho; // portas e LED juntos na categoria Outputs
+const INPUT_COLOUR = PALETA.marinho;
+const OLED_COLOUR = PALETA.laranja;
 const GAME_COLOUR = PALETA.preto;
 const TEXT_COLOUR = PALETA.cinza;
-const MATH_COLOUR = PALETA.azul;
-const LOGIC_COLOUR = PALETA.marinho;
-const VARIABLE_COLOUR = PALETA.laranja;
-const RADIO_COLOUR = PALETA.lilas;
-const SOUND_COLOUR = PALETA.lilas;
+const MATH_COLOUR = PALETA.roxo; // dentro da Lógica, na mesma cor
+const LOGIC_COLOUR = PALETA.roxo;
+const VARIABLE_COLOUR = PALETA.rosa;
+const RADIO_COLOUR = PALETA.turquesa;
+const SOUND_COLOUR = PALETA.azul;
 
 /** Tema: os blocos que vêm do Blockly (se, repetir, lógica, números, texto, variáveis) na mesma paleta. */
 export const THEME = Blockly.Theme.defineTheme("betablocks", {
@@ -228,6 +231,101 @@ class BetaRenderer extends Blockly.zelos.Renderer {
   }
 }
 
+/**
+ * Slider desenhado dentro do bloco (velocidade do motor): arrastar a bolinha muda o valor,
+ * de -100 a 100, com o 0 no meio. O bloco do motor copia o valor para o número ao lado.
+ */
+class FieldSliderInline extends Blockly.Field<number> {
+  override SERIALIZABLE = true;
+  private static readonly W = 110; // largura do trilho
+  private static readonly H = 24;
+  // fixos (static): o Blockly valida o valor inicial ainda dentro do super(), antes de existirem
+  // campos da instância — com min/max da instância a conta dava NaN e a bolinha ia para o canto
+  private static readonly MIN = -100;
+  private static readonly MAX = 100;
+  private knob: SVGCircleElement | null = null;
+  private track: SVGRectElement | null = null;
+  /** Chamado a cada movimento da bolinha (o bloco do motor copia o valor para o número na hora). */
+  onSlide: ((v: number) => void) | null = null;
+
+  static override fromJson(config: Blockly.FieldConfig): FieldSliderInline {
+    return new FieldSliderInline(Number((config as { value?: number }).value) || 0);
+  }
+
+  protected override doClassValidation_(v?: unknown): number | null {
+    const n = Number(v);
+    const { MIN, MAX } = FieldSliderInline;
+    return Number.isFinite(n) ? Math.round(Math.max(MIN, Math.min(MAX, n))) : null;
+  }
+
+  protected override getText_(): string {
+    return String(this.getValue() ?? 0);
+  }
+
+  override initView() {
+    const { W, H } = FieldSliderInline;
+    const svg = Blockly.utils.Svg;
+    const campo = this.fieldGroup_!;
+    campo.style.touchAction = "none"; // arrastar no celular mexe a bolinha, não a tela
+    campo.style.cursor = "pointer"; // mãozinha
+    // num grupo interno: o CSS do Blockly pinta de branco os <rect> filhos diretos de um campo
+    // (é o fundo dos campos de texto), e o slider ficava num retângulo branco
+    const g = Blockly.utils.dom.createSvgElement(svg.G, {}, campo);
+    // área de toque invisível do tamanho do campo
+    Blockly.utils.dom.createSvgElement(svg.RECT, { width: W, height: H, fill: "transparent" }, g);
+    this.track = Blockly.utils.dom.createSvgElement(
+      svg.RECT,
+      { x: 8, y: H / 2 - 2, width: W - 16, height: 4, rx: 2, fill: "rgba(255,255,255,0.55)" },
+      g,
+    );
+    Blockly.utils.dom.createSvgElement(svg.RECT, { x: W / 2 - 1, y: H / 2 - 6, width: 2, height: 12, fill: "#fff" }, g); // o 0
+    this.knob = Blockly.utils.dom.createSvgElement(
+      svg.CIRCLE,
+      { cy: H / 2, r: 8, fill: "#fff", stroke: "rgba(0,0,0,0.25)", "stroke-width": 1 },
+      g,
+    );
+    this.size_ = new Blockly.utils.Size(W, H);
+    this.render_(); // bolinha já no lugar do valor (0 = meio)
+    Blockly.browserEvents.bind(campo, "pointerdown", this, this.onDown);
+  }
+
+  protected override render_() {
+    const { W, MIN, MAX } = FieldSliderInline;
+    const v = Number(this.getValue()) || 0;
+    this.knob?.setAttribute("cx", String(8 + ((v - MIN) / (MAX - MIN)) * (W - 16)));
+    this.size_ = new Blockly.utils.Size(W, FieldSliderInline.H);
+  }
+
+  private onDown(e: PointerEvent) {
+    const block = this.getSourceBlock();
+    if (!block || block.isInFlyout || !this.isCurrentlyEditable()) return; // na biblioteca: arrasta o bloco
+    e.stopPropagation(); // não começa a arrastar o bloco
+    e.preventDefault();
+    Blockly.Events.setGroup(true); // um arrasto = um "desfazer"
+    const move = (ev: PointerEvent) => this.setFromX(ev.clientX);
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
+      Blockly.Events.setGroup(false);
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
+    this.setFromX(e.clientX);
+  }
+
+  private setFromX(clientX: number) {
+    const r = this.track!.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    const { MIN, MAX } = FieldSliderInline;
+    let v = Math.round(MIN + f * (MAX - MIN));
+    if (Math.abs(v) <= 3) v = 0; // fica fácil parar no 0
+    this.setValue(v);
+    this.onSlide?.(this.getValue() ?? v);
+  }
+}
+
 /** Nome do renderizador do app (o zelos com o ajuste acima). */
 export const RENDERER = "betablocks";
 
@@ -235,6 +333,46 @@ export function defineBlocks(): void {
   Blockly.Msg["VARIABLES_HUE"] = VARIABLE_COLOUR;
   if (!Blockly.registry.hasItem(Blockly.registry.Type.RENDERER, RENDERER)) {
     Blockly.blockRendering.register(RENDERER, BetaRenderer);
+  }
+  // "se" (e as pecinhas "senão se"/"senão" da engrenagem) no amarelo do Controle: no Blockly ele
+  // vem com o estilo da Lógica
+  for (const tipo of ["controls_if", "controls_ifelse", "controls_if_if", "controls_if_elseif", "controls_if_else"]) {
+    const def = Blockly.Blocks[tipo] as { init?: () => void; bbAmarelo?: boolean } | undefined;
+    if (!def?.init || def.bbAmarelo) continue;
+    const init = def.init;
+    def.init = function (this: Blockly.Block) {
+      init.call(this);
+      this.setStyle("loop_blocks");
+    };
+    def.bbAmarelo = true;
+  }
+  if (!Blockly.registry.hasItem(Blockly.registry.Type.FIELD, "field_slider_inline")) {
+    Blockly.fieldRegistry.register("field_slider_inline", FieldSliderInline);
+  }
+  // motor: o slider e o número ao lado andam juntos (o número pode ser trocado por outro bloco).
+  // Slider -> número: na hora, a cada movimento. Número -> slider: pelo evento, só quando é o
+  // valor atual (os eventos chegam atrasados: um "77" velho chegando com a bolinha já em 100
+  // puxava o slider de volta e os dois terminavam diferentes).
+  if (!Blockly.Extensions.isRegistered("motor_slider_sync")) {
+    Blockly.Extensions.register("motor_slider_sync", function (this: Blockly.Block) {
+      const numero = () => {
+        const num = this.getInputTargetBlock("SPEED");
+        return num?.isShadow() && num.getField("NUM") ? num : null;
+      };
+      (this.getField("SLIDER") as FieldSliderInline).onSlide = (v) => {
+        const num = numero();
+        if (num && num.getFieldValue("NUM") !== String(v)) num.setFieldValue(String(v), "NUM");
+      };
+      this.setOnChange(function (this: Blockly.Block, e: Blockly.Events.Abstract) {
+        if (this.isInFlyout || e.type !== Blockly.Events.BLOCK_CHANGE) return;
+        const ev = e as Blockly.Events.BlockChange;
+        const num = numero();
+        if (!num || ev.blockId !== num.id || ev.name !== "NUM") return;
+        if (String(ev.newValue) !== String(num.getFieldValue("NUM"))) return; // aviso velho
+        const v = Math.round(Math.max(-100, Math.min(100, Number(num.getFieldValue("NUM")) || 0)));
+        if (this.getFieldValue("SLIDER") !== v) this.setFieldValue(v, "SLIDER");
+      });
+    });
   }
   // "ao receber número = ...": o campo aceita só um número (vírgula vira ponto) ou vazio
   if (!Blockly.Extensions.isRegistered("radio_number_filter")) {
@@ -408,6 +546,32 @@ export function defineBlocks(): void {
       nextStatement: null,
       colour: PORT_COLOUR,
       tooltip: "Liga (3,3 V) ou desliga (0 V) uma porta GPIO.",
+    },
+    {
+      type: "motor_run",
+      message0: "motor %1 %2 %3 %%",
+      args0: [
+        { type: "field_dropdown", name: "MOTOR", options: [["M1", "1"], ["M2", "2"]] },
+        { type: "field_slider_inline", name: "SLIDER", value: 0, min: -100, max: 100 },
+        { type: "input_value", name: "SPEED", check: "Number" },
+      ],
+      extensions: ["motor_slider_sync"],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: PORT_COLOUR,
+      tooltip:
+        "Liga o motor de -100% a 100%. M1 usa as portas 4 e 5; M2, as portas 6 e 7. Positivo gira para um lado " +
+        "(força na primeira porta), negativo para o outro (força na segunda), 0% para. O número pode vir de outro " +
+        "bloco, como o potenciômetro.",
+    },
+    // número do motor (sombra do bloco acima): de -100 a 100, acompanha o slider
+    {
+      type: "motor_pct",
+      message0: "%1",
+      args0: [{ type: "field_number", name: "NUM", value: 0, min: -100, max: 100, precision: 1 }],
+      output: "Number",
+      colour: PORT_COLOUR,
     },
     {
       type: "port_pwm",
@@ -639,7 +803,7 @@ export function defineBlocks(): void {
     {
       type: "oled_breakout",
       message0: "🧱 jogo do Breakout (raquete na porta %1)",
-      args0: [{ type: "field_number", name: "PIN", value: 7, min: 1, max: 20, precision: 1 }],
+      args0: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
       previousStatement: null,
       nextStatement: null,
       colour: GAME_COLOUR,
@@ -651,7 +815,7 @@ export function defineBlocks(): void {
     {
       type: "oled_pong_cpu",
       message0: "🏓 jogo do Pong contra a máquina (raquete na porta %1)",
-      args0: [{ type: "field_number", name: "PIN", value: 7, min: 1, max: 20, precision: 1 }],
+      args0: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
       previousStatement: null,
       nextStatement: null,
       colour: GAME_COLOUR,
@@ -663,8 +827,8 @@ export function defineBlocks(): void {
       type: "oled_pong_2",
       message0: "🏓 jogo do Pong para dois (raquetes nas portas %1 e %2)",
       args0: [
-        { type: "field_number", name: "PIN", value: 7, min: 1, max: 20, precision: 1 },
-        { type: "field_dropdown", name: "PIN2", options: PORTAS_1A3 }, // a 8 virou o LED vermelho
+        { type: "field_dropdown", name: "PIN", options: PORTAS_1A3 },
+        { type: "field_dropdown", name: "PIN2", options: PORTAS_1A3 },
       ],
       previousStatement: null,
       nextStatement: null,
@@ -688,7 +852,7 @@ export function defineBlocks(): void {
     {
       type: "oled_invasores",
       message0: "👾 jogo dos Invasores (nave na porta %1)",
-      args0: [{ type: "field_number", name: "PIN", value: 7, min: 1, max: 20, precision: 1 }],
+      args0: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
       previousStatement: null,
       nextStatement: null,
       colour: GAME_COLOUR,
@@ -1016,6 +1180,16 @@ export function defineBlocks(): void {
     return `porta_pwm(${pin}, ${pct})\n`;
   };
 
+  pythonGenerator.forBlock["motor_run"] = (block, gen) => {
+    // encaixe vazio: vale o slider
+    const v = gen.valueToCode(block, "SPEED", Order.NONE) || String(block.getFieldValue("SLIDER") ?? 0);
+    return `motor(${block.getFieldValue("MOTOR")}, ${v})\n`;
+  };
+  pythonGenerator.forBlock["motor_pct"] = (block) => {
+    const n = Number(block.getFieldValue("NUM")) || 0;
+    return [String(n), n < 0 ? Order.UNARY_SIGN : Order.ATOMIC];
+  };
+
   pythonGenerator.forBlock["input_digital"] = (block) => {
     return [`porta_ler(${block.getFieldValue("PIN")})`, Order.FUNCTION_CALL];
   };
@@ -1075,15 +1249,15 @@ export function defineBlocks(): void {
   pythonGenerator.forBlock["oled_snake"] = () => "_jogo_rodar(visor_cobrinha)\n";
   pythonGenerator.forBlock["oled_dino"] = () => "_jogo_rodar(visor_dino)\n";
   pythonGenerator.forBlock["oled_flappy"] = () => "_jogo_rodar(visor_flappy)\n";
-  const porta = (block: Blockly.Block, campo: string) => Math.round(Number(block.getFieldValue(campo)) || 7);
+  const porta = (block: Blockly.Block, campo: string) => Math.round(Number(block.getFieldValue(campo)) || 1);
   pythonGenerator.forBlock["oled_pong_cpu"] = (block) => `_jogo_rodar(lambda: visor_pong(1, ${porta(block, "PIN")}, 0))\n`;
   pythonGenerator.forBlock["oled_pong_2"] = (block) =>
     `_jogo_rodar(lambda: visor_pong(2, ${porta(block, "PIN")}, ${porta(block, "PIN2")}))\n`;
   pythonGenerator.forBlock["oled_tetris"] = () => "_jogo_rodar(visor_tetris)\n";
   pythonGenerator.forBlock["oled_invasores"] = (block) =>
-    `_jogo_rodar(lambda: visor_invasores(${Math.round(Number(block.getFieldValue("PIN")) || 7)}))\n`;
+    `_jogo_rodar(lambda: visor_invasores(${Math.round(Number(block.getFieldValue("PIN")) || 1)}))\n`;
   pythonGenerator.forBlock["oled_breakout"] = (block) =>
-    `_jogo_rodar(lambda: visor_breakout(${Math.round(Number(block.getFieldValue("PIN")) || 7)}))\n`;
+    `_jogo_rodar(lambda: visor_breakout(${Math.round(Number(block.getFieldValue("PIN")) || 1)}))\n`;
   pythonGenerator.forBlock["game_speed"] = (block) => {
     const v = Math.min(10, Math.max(1, Number(block.getFieldValue("SPEED")) || 5));
     return `_jogo_velocidade = ${v}\n`;
@@ -1537,6 +1711,26 @@ export function preamble(pin: number): string {
     "    if n not in _pwms:",
     "        _pwms[n] = PWM(Pin(n), freq=1000)",
     "    _pwms[n].duty_u16(int(pct * 65535 // 100))",
+    "",
+    "# motores: cada um em duas portas (frente, tras). Positivo = PWM na primeira e a segunda",
+    "# em 0 V; negativo = o contrario; 0 = as duas em 0 V (motor parado)",
+    "_MOTORES = {1: (4, 5), 2: (6, 7)}",
+    "",
+    "def motor(m, pct):",
+    "    a, b = _MOTORES.get(int(m), _MOTORES[1])",
+    "    try:",
+    "        pct = max(-100, min(100, float(pct)))",
+    "    except (TypeError, ValueError):",
+    "        pct = 0",
+    "    if pct > 0:",
+    "        porta_ligar(b, 0)",
+    "        porta_pwm(a, pct)",
+    "    elif pct < 0:",
+    "        porta_ligar(a, 0)",
+    "        porta_pwm(b, -pct)",
+    "    else:",
+    "        porta_ligar(a, 0)",
+    "        porta_ligar(b, 0)",
     "",
     "_adcs = {}",
     "",
@@ -3757,7 +3951,7 @@ export const toolbox = {
     },
     {
       kind: "category",
-      name: "LED",
+      name: "Outputs", // LED e portas (antes eram as categorias LED e Saídas)
       colour: LED_COLOUR,
       contents: [
         {
@@ -3771,67 +3965,22 @@ export const toolbox = {
         },
         { kind: "block", type: "led_color" },
         { kind: "block", type: "led_off" },
-      ],
-    },
-    {
-      kind: "category",
-      name: "Tempo",
-      colour: TIME_COLOUR,
-      contents: [
-        {
-          kind: "block",
-          type: "wait_ms",
-          inputs: { TIME: { shadow: { type: "math_number", fields: { NUM: 500 } } } },
-        },
-      ],
-    },
-    {
-      kind: "category",
-      name: "Saídas",
-      colour: PORT_COLOUR,
-      contents: [
         { kind: "block", type: "port_onoff" },
         {
           kind: "block",
           type: "port_pwm",
           inputs: { PCT: { shadow: { type: "math_number", fields: { NUM: 50 } } } },
         },
+        {
+          kind: "block",
+          type: "motor_run",
+          inputs: { SPEED: { shadow: { type: "motor_pct", fields: { NUM: 0 } } } },
+        },
       ],
     },
     {
       kind: "category",
-      name: "Som",
-      colour: SOUND_COLOUR,
-      contents: [
-        { kind: "block", type: "sound_note", fields: { NOTE: "0", OCTAVE: "4", BEATS: "1" } },
-        { kind: "block", type: "sound_rest" },
-        { kind: "block", type: "sound_melody" },
-        { kind: "block", type: "sound_effect" },
-        { kind: "block", type: "sound_compose" },
-        {
-          kind: "block",
-          type: "sound_tempo",
-          inputs: { BPM: { shadow: { type: "math_number", fields: { NUM: 120 } } } },
-        },
-        {
-          kind: "block",
-          type: "sound_hz",
-          inputs: {
-            HZ: { shadow: { type: "math_number", fields: { NUM: 440 } } },
-            MS: { shadow: { type: "math_number", fields: { NUM: 500 } } },
-          },
-        },
-        {
-          kind: "block",
-          type: "sound_start",
-          inputs: { HZ: { shadow: { type: "math_number", fields: { NUM: 440 } } } },
-        },
-        { kind: "block", type: "sound_stop" },
-      ],
-    },
-    {
-      kind: "category",
-      name: "Entradas",
+      name: "Inputs", // antes "Entradas"
       colour: INPUT_COLOUR,
       contents: [
         // "se a porta...", "se/senão" e "mostrar" saíram do menu, mas continuam
@@ -3841,6 +3990,27 @@ export const toolbox = {
         { kind: "block", type: "input_analog" },
         { kind: "block", type: "input_digital" },
         { kind: "block", type: "input_dht" },
+      ],
+    },
+    {
+      kind: "category",
+      name: "Controle",
+      colour: CONTROL_COLOUR,
+      contents: [
+        // "esperar" (era a categoria Tempo)
+        {
+          kind: "block",
+          type: "wait_ms",
+          inputs: { TIME: { shadow: { type: "math_number", fields: { NUM: 500 } } } },
+        },
+        { kind: "block", type: "forever" },
+        {
+          kind: "block",
+          type: "controls_repeat_ext",
+          inputs: { TIMES: { shadow: { type: "math_number", fields: { NUM: 10 } } } },
+        },
+        { kind: "block", type: "controls_if" },
+        { kind: "block", type: "controls_whileUntil" },
       ],
     },
     {
@@ -3889,69 +4059,49 @@ export const toolbox = {
     },
     {
       kind: "category",
-      name: "Jogos",
-      colour: GAME_COLOUR,
+      name: "Texto",
+      colour: TEXT_COLOUR,
       contents: [
-        { kind: "block", type: "game_speed" },
-        { kind: "block", type: "oled_snake" },
-        { kind: "block", type: "oled_dino" },
-        { kind: "block", type: "oled_flappy" },
-        { kind: "block", type: "oled_breakout" },
-        { kind: "block", type: "oled_pong_cpu" },
-        { kind: "block", type: "oled_pong_2" },
-        { kind: "block", type: "oled_tetris" },
-        { kind: "block", type: "oled_invasores" },
+        { kind: "block", type: "text", fields: { TEXT: "Ola" } },
+        {
+          kind: "block",
+          type: "text_join_plus",
+          inputs: {
+            ADD0: { shadow: { type: "text", fields: { TEXT: "Valor: " } } },
+            ADD1: { shadow: { type: "text", fields: { TEXT: "" } } },
+          },
+        },
       ],
     },
     {
       kind: "category",
-      name: "Rádio",
-      colour: RADIO_COLOUR,
+      name: "Som",
+      colour: SOUND_COLOUR,
       contents: [
-        { kind: "label", text: "Grupo" },
-        { kind: "block", type: "radio_group" },
-        { kind: "label", text: "Enviar" },
+        { kind: "block", type: "sound_note", fields: { NOTE: "0", OCTAVE: "4", BEATS: "1" } },
+        { kind: "block", type: "sound_rest" },
+        { kind: "block", type: "sound_melody" },
+        { kind: "block", type: "sound_effect" },
+        { kind: "block", type: "sound_compose" },
         {
           kind: "block",
-          type: "radio_send_number",
-          inputs: { VALUE: { shadow: { type: "math_number", fields: { NUM: 0 } } } },
+          type: "sound_tempo",
+          inputs: { BPM: { shadow: { type: "math_number", fields: { NUM: 120 } } } },
         },
         {
           kind: "block",
-          type: "radio_send_value",
+          type: "sound_hz",
           inputs: {
-            NAME: { shadow: { type: "text", fields: { TEXT: "nome" } } },
-            VALUE: { shadow: { type: "math_number", fields: { NUM: 0 } } },
+            HZ: { shadow: { type: "math_number", fields: { NUM: 440 } } },
+            MS: { shadow: { type: "math_number", fields: { NUM: 500 } } },
           },
         },
         {
           kind: "block",
-          type: "radio_send_text",
-          inputs: { TEXT: { shadow: { type: "text", fields: { TEXT: "" } } } },
+          type: "sound_start",
+          inputs: { HZ: { shadow: { type: "math_number", fields: { NUM: 440 } } } },
         },
-        { kind: "label", text: "Receber" },
-        { kind: "block", type: "radio_on_number" },
-        { kind: "block", type: "radio_number" },
-        { kind: "block", type: "radio_on_value" },
-        { kind: "block", type: "radio_name" },
-        { kind: "block", type: "radio_value" },
-        { kind: "block", type: "radio_on_text" },
-        { kind: "block", type: "radio_text" },
-      ],
-    },
-    {
-      kind: "category",
-      name: "Controle",
-      colour: CONTROL_COLOUR,
-      contents: [
-        { kind: "block", type: "forever" },
-        {
-          kind: "block",
-          type: "controls_repeat_ext",
-          inputs: { TIMES: { shadow: { type: "math_number", fields: { NUM: 10 } } } },
-        },
-        { kind: "block", type: "controls_if" },
-        { kind: "block", type: "controls_whileUntil" },
+        { kind: "block", type: "sound_stop" },
       ],
     },
     {
@@ -3970,29 +4120,7 @@ export const toolbox = {
         { kind: "block", type: "logic_operation" },
         { kind: "block", type: "logic_negate" },
         { kind: "block", type: "logic_boolean" },
-      ],
-    },
-    {
-      kind: "category",
-      name: "Texto",
-      colour: TEXT_COLOUR,
-      contents: [
-        { kind: "block", type: "text", fields: { TEXT: "Ola" } },
-        {
-          kind: "block",
-          type: "text_join_plus",
-          inputs: {
-            ADD0: { shadow: { type: "text", fields: { TEXT: "Valor: " } } },
-            ADD1: { shadow: { type: "text", fields: { TEXT: "" } } },
-          },
-        },
-      ],
-    },
-    {
-      kind: "category",
-      name: "Matemática",
-      colour: MATH_COLOUR,
-      contents: [
+        // blocos de matemática (era a categoria Matemática)
         {
           kind: "block",
           type: "math_convert",
@@ -4030,6 +4158,60 @@ export const toolbox = {
     },
     // "criar variável", "definir", "alterar por" e o bloco redondo de cada variável (do Blockly)
     { kind: "category", name: "Variáveis", colour: VARIABLE_COLOUR, custom: "VARIABLE" },
+    {
+      kind: "category",
+      name: "Rádio",
+      colour: RADIO_COLOUR,
+      contents: [
+        // aviso no topo da lista: o rádio fica ligado o tempo todo e gasta bastante bateria
+        { kind: "label", text: "⚠ Alto consumo de energia", "web-class": "bb-aviso" },
+        { kind: "label", text: "Grupo" },
+        { kind: "block", type: "radio_group" },
+        { kind: "label", text: "Enviar" },
+        {
+          kind: "block",
+          type: "radio_send_number",
+          inputs: { VALUE: { shadow: { type: "math_number", fields: { NUM: 0 } } } },
+        },
+        {
+          kind: "block",
+          type: "radio_send_value",
+          inputs: {
+            NAME: { shadow: { type: "text", fields: { TEXT: "nome" } } },
+            VALUE: { shadow: { type: "math_number", fields: { NUM: 0 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "radio_send_text",
+          inputs: { TEXT: { shadow: { type: "text", fields: { TEXT: "" } } } },
+        },
+        { kind: "label", text: "Receber" },
+        { kind: "block", type: "radio_on_number" },
+        { kind: "block", type: "radio_number" },
+        { kind: "block", type: "radio_on_value" },
+        { kind: "block", type: "radio_name" },
+        { kind: "block", type: "radio_value" },
+        { kind: "block", type: "radio_on_text" },
+        { kind: "block", type: "radio_text" },
+      ],
+    },
+    {
+      kind: "category",
+      name: "Jogos",
+      colour: GAME_COLOUR,
+      contents: [
+        { kind: "block", type: "game_speed" },
+        { kind: "block", type: "oled_snake" },
+        { kind: "block", type: "oled_dino" },
+        { kind: "block", type: "oled_flappy" },
+        { kind: "block", type: "oled_breakout" },
+        { kind: "block", type: "oled_pong_cpu" },
+        { kind: "block", type: "oled_pong_2", fields: { PIN: "1", PIN2: "2" } }, // raquetes em portas diferentes
+        { kind: "block", type: "oled_tetris" },
+        { kind: "block", type: "oled_invasores" },
+      ],
+    },
   ],
 };
 
