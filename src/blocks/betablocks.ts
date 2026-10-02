@@ -48,8 +48,8 @@ export const THEME = Blockly.Theme.defineTheme("betablocks", {
   },
 });
 
-/** Pino padrão do buzzer nos blocos de Som. */
-const SOM_PINO = 12;
+/** Portas dos módulos do kit (buzzer, raquete do Pong): escolhidas num menu. */
+const PORTAS_1A3: [string, string][] = [["1", "1"], ["2", "2"], ["3", "3"]];
 const NOTE_OPTIONS: [string, string][] = [
   ["Dó", "0"], ["Dó♯", "1"], ["Ré", "2"], ["Ré♯", "3"], ["Mi", "4"], ["Fá", "5"],
   ["Fá♯", "6"], ["Sol", "7"], ["Sol♯", "8"], ["Lá", "9"], ["Lá♯", "10"], ["Si", "11"],
@@ -180,7 +180,8 @@ const EFFECTS: [string, string, string][] = [
 ];
 const MELODY_OPTIONS: [string, string][] = MELODIES.map(([label, id]) => [label, id]);
 const EFFECT_OPTIONS: [string, string][] = EFFECTS.map(([label, id]) => [label, id]);
-const somPinoField = { type: "field_number", name: "PIN", value: SOM_PINO, min: 0, max: 48, precision: 1 };
+// buzzer: porta 1, 2 ou 3 (a 12 virou o SDA do visor). Projetos antigos com outra porta abrem na 1.
+const somPinoField = { type: "field_dropdown", name: "PIN", options: PORTAS_1A3 };
 
 // Cores nomeadas usadas pelo bloco "acender LED cor"
 const NAMED_COLORS: Record<string, [number, number, number]> = {
@@ -317,7 +318,7 @@ export function defineBlocks(): void {
       previousStatement: null,
       nextStatement: null,
       colour: LED_COLOUR,
-      tooltip: "Acende o LED RGB (vermelho na porta 4, verde na 5, azul na 6) com a intensidade de cada cor (0 a 255).",
+      tooltip: "Acende o LED RGB (vermelho na porta 8, verde na 9, azul na 10) com a intensidade de cada cor (0 a 255).",
     },
     // o de cima (0 a 255) saiu do menu, mas continua funcionando nos projetos antigos
     {
@@ -334,7 +335,7 @@ export function defineBlocks(): void {
       colour: LED_COLOUR,
       tooltip:
         "Acende o LED RGB com a intensidade de cada cor, de 0 a 100% (a mesma medida do 'valor porta' e das saídas): " +
-        "r = vermelho (porta 4), g = verde (porta 5), b = azul (porta 6).",
+        "r = vermelho (porta 8), g = verde (porta 9), b = azul (porta 10).",
     },
     {
       type: "led_color",
@@ -359,7 +360,7 @@ export function defineBlocks(): void {
       previousStatement: null,
       nextStatement: null,
       colour: LED_COLOUR,
-      tooltip: "Acende o LED RGB (portas 4, 5 e 6) com uma cor pronta.",
+      tooltip: "Acende o LED RGB (portas 8, 9 e 10) com uma cor pronta.",
     },
     {
       type: "led_off",
@@ -367,7 +368,7 @@ export function defineBlocks(): void {
       previousStatement: null,
       nextStatement: null,
       colour: LED_COLOUR,
-      tooltip: "Apaga o LED RGB (portas 4, 5 e 6).",
+      tooltip: "Apaga o LED RGB (portas 8, 9 e 10).",
     },
     {
       type: "wait_ms",
@@ -663,7 +664,7 @@ export function defineBlocks(): void {
       message0: "🏓 jogo do Pong para dois (raquetes nas portas %1 e %2)",
       args0: [
         { type: "field_number", name: "PIN", value: 7, min: 1, max: 20, precision: 1 },
-        { type: "field_number", name: "PIN2", value: 8, min: 1, max: 20, precision: 1 },
+        { type: "field_dropdown", name: "PIN2", options: PORTAS_1A3 }, // a 8 virou o LED vermelho
       ],
       previousStatement: null,
       nextStatement: null,
@@ -1275,7 +1276,7 @@ function defineComposeBlock() {
         .appendField(preview, "PREVIEW")
         .appendField(editButton, "EDIT")
         .appendField("no pino")
-        .appendField(new Blockly.FieldNumber(SOM_PINO, 0, 48, 1), "PIN")
+        .appendField(new Blockly.FieldDropdown(PORTAS_1A3), "PIN")
         .appendField(new Blockly.FieldDropdown([["até o fim", "FIM"], ["em segundo plano", "FUNDO"]]), "MODE");
       this.setPreviousStatement(true);
       this.setNextStatement(true);
@@ -1400,7 +1401,7 @@ export function preamble(pin: number): string {
     "from neopixel import NeoPixel",
     "import time",
     "",
-    "# LED embutido (WS2812) fica apagado: os blocos de LED usam o LED RGB das portas 4, 5 e 6",
+    "# LED embutido (WS2812) fica apagado: os blocos de LED usam o LED RGB das portas 8, 9 e 10",
     `np = NeoPixel(Pin(${pin}, Pin.OUT), 1)`,
     "np[0] = (0, 0, 0)",
     "np.write()",
@@ -1512,7 +1513,7 @@ export function preamble(pin: number): string {
     "",
     "_pwms = {}",
     "",
-    "_LED_PORTAS = (4, 5, 6)  # vermelho, verde, azul",
+    "_LED_PORTAS = (8, 9, 10)  # vermelho, verde, azul",
     "",
     "def led_rgb(r, g, b):",
     "    for n, v in zip(_LED_PORTAS, (r, g, b)):",
@@ -3397,7 +3398,7 @@ const pyUnicode = (t: string) => [...t].map((c) => `\\u${c.charCodeAt(0).toStrin
 
 /**
  * Funções auxiliares do visor OLED (precisa do arquivo ssd1306.py na placa).
- * A tela fica sempre ligada nas portas 8 (SDA) e 9 (SCL): todo programa já começa com ela.
+ * A tela fica sempre ligada nas portas 12 (SDA) e 11 (SCL): todo programa já começa com ela.
  * Sem o OLED físico, usa um visor virtual na memória; em ambos os casos o
  * conteúdo é enviado ao app (no máximo 10 quadros/s) para o preview.
  */
@@ -3464,7 +3465,7 @@ export function oledCode(): string {
     "def _visor_garantir():",
     "    # o visor ja foi ligado no inicio; so por garantia",
     "    if oled is None:",
-    "        visor_iniciar(8, 9, 128, 64)",
+    "        visor_iniciar(12, 11, 128, 64)",
     "",
     "# a fonte do visor so tem ASCII: acentos viram a letra sem acento e o grau tem desenho proprio",
     `_VISOR_ACENTOS = '${pyUnicode(ACENTOS)}'`,
@@ -3640,8 +3641,8 @@ export function oledCode(): string {
     "    _visor_mostrar()",
     "",
     "",
-    "# a tela fica sempre nas portas 8 (SDA) e 9 (SCL): todo programa ja comeca com ela ligada",
-    "visor_iniciar(8, 9, 128, 64)",
+    "# a tela fica sempre nas portas 12 (SDA) e 11 (SCL): todo programa ja comeca com ela ligada",
+    "visor_iniciar(12, 11, 128, 64)",
     "",
     "# ao ligar (ou reset, ou programa novo): animacao do logo da Beta Kit (~5 s), a tela apaga e o projeto comeca",
     `_LOGO = '${LOGO_B64}'`,
