@@ -899,13 +899,14 @@ function refreshButtons() {
   btnConnect.textContent = on ? "Desconectar" : "Conectar";
   btnConnect.disabled = !on && !serialSupported;
   btnConnectBle.hidden = on || !bleSupported;
-  btnUpload.disabled = !on;
+  btnUpload.disabled = !on || enviando; // enviando: não deixa mandar de novo no meio
   btnStop.disabled = !on;
   btnFlash.disabled = !serialSupported;
   updatePadView();
 }
 
 let busy = false;
+let enviando = false; // ▶ Enviar em andamento
 async function run(label: string, fn: () => Promise<void>) {
   if (busy) return;
   busy = true;
@@ -1042,6 +1043,8 @@ btnUpload.addEventListener("click", () =>
     setStatus("Enviando programa…");
     showTab("console");
     consoleWrite("\n[enviando programa...]\n");
+    enviando = true;
+    refreshButtons();
     try {
       await board.uploadMain(code, programFiles());
     } catch (err) {
@@ -1049,6 +1052,8 @@ btnUpload.addEventListener("click", () =>
         throw new Error(`${err.message}\nA placa tem MicroPython? Se não, use "Gravar MicroPython". Aperte RESET na placa e veja se aparece "MicroPython v..." no console.`);
       }
       throw err;
+    } finally {
+      enviando = false; // o run() reativa o botão no fim (refreshButtons)
     }
     monitorMode = "program";
     setStatus(board.transport === "ble" ? `Programa enviado e rodando! (${SO_CABO})` : "Programa enviado e rodando!", "ok");
