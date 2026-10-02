@@ -209,7 +209,7 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
   .toolbar { flex-wrap: nowrap; gap: 6px; }
   .toolbar .btn { padding: 6px 12px; font-size: 16px; white-space: nowrap; }
   .toolbar .btn-label { display: none; } /* no topo só o ícone: ᛒ ▶ */
-  .toolbar #btn-upload { padding: 6px 34px; } /* ▶ largo, no lugar que era do ■ Parar (agora no menu) */
+  .toolbar #btn-upload { padding: 6px 26px; } /* ▶ largo (o ■ Parar fica no menu) */
 
   .menu-panel {
     position: absolute; top: calc(100% + 4px); left: 8px; z-index: 200; /* acima das categorias do Blockly (70) */

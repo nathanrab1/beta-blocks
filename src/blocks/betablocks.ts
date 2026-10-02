@@ -557,6 +557,21 @@ export function defineBlocks(): void {
       tooltip: "Liga (3,3 V) ou desliga (0 V) uma porta GPIO.",
     },
     {
+      // ligar/desligar, como o "ligar porta": ligar = 100% (para a frente), desligar = 0%
+      type: "motor_onoff",
+      message0: "%1 motor %2",
+      args0: [
+        { type: "field_dropdown", name: "STATE", options: [["ligar", "ON"], ["desligar", "OFF"]] },
+        { type: "field_dropdown", name: "MOTOR", options: [["M1", "1"], ["M2", "2"]] },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: PORT_COLOUR,
+      tooltip:
+        "Liga o motor na força máxima (100%, para a frente) ou desliga (0%). M1 usa as portas 4 e 5; " +
+        "M2, as portas 6 e 7. Para escolher a velocidade ou girar para trás, use os outros blocos do motor.",
+    },
+    {
       // com slider: arrastar a bolinha ou digitar o número (um acompanha o outro); nada encaixa aqui
       type: "motor_slider",
       message0: "motor %1 %2 %3 %%",
@@ -1223,6 +1238,8 @@ export function defineBlocks(): void {
     return `porta_pwm(${pin}, ${pct})\n`;
   };
 
+  pythonGenerator.forBlock["motor_onoff"] = (block) =>
+    `motor(${block.getFieldValue("MOTOR")}, ${block.getFieldValue("STATE") === "ON" ? 100 : 0})\n`;
   pythonGenerator.forBlock["motor_slider"] = (block) =>
     `motor(${block.getFieldValue("MOTOR")}, ${Number(block.getFieldValue("NUM")) || 0})\n`;
   pythonGenerator.forBlock["motor_run"] = (block, gen) => {
@@ -4062,6 +4079,7 @@ export const toolbox = {
           type: "port_pwm",
           inputs: { PCT: { shadow: { type: "math_number", fields: { NUM: 50 } } } },
         },
+        { kind: "block", type: "motor_onoff" },
         { kind: "block", type: "motor_slider" },
         {
           kind: "block",

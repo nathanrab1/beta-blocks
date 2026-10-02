@@ -132,7 +132,9 @@ workspace.registerToolboxCategoryCallback("VARIABLE", (ws) =>
   const menuPanel = $("menu-panel");
   const btnMenu = $<HTMLButtonElement>("btn-menu");
   const sidePanel = document.querySelector<HTMLElement>(".side-panel")!;
-  const NO_TOPO = new Set(["btn-connect-ble", "btn-upload"]); // ■ Parar vai para o menu
+  // no topo, nesta ordem: Bluetooth, ▶ e 📱 controle (só o ícone); o resto (■ Parar etc.) vai para o menu
+  const TOPO = ["btn-connect-ble", "btn-upload", "link-controle"];
+  const NO_TOPO = new Set(TOPO);
   const itens = [...toolbarEl.children] as HTMLElement[];
 
   const abrirMenu = (abrir: boolean) => {
@@ -142,7 +144,7 @@ workspace.registerToolboxCategoryCallback("VARIABLE", (ws) =>
   // os botões mudam de lugar (mesmos elementos: os cliques continuam funcionando)
   const aplicar = () => {
     if (compacto.matches) {
-      toolbarEl.replaceChildren(...itens.filter((el) => NO_TOPO.has(el.id)));
+      toolbarEl.replaceChildren(...TOPO.map((id) => itens.find((el) => el.id === id)!).filter(Boolean));
       menuPanel.replaceChildren(...itens.filter((el) => !NO_TOPO.has(el.id)));
     } else {
       toolbarEl.replaceChildren(...itens);
