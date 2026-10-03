@@ -19,10 +19,12 @@ import {
   oledCode,
   RENDERER,
   THEME,
+  usaTeclado,
   type InputPins,
 } from "./blocks/betablocks";
 import ssd1306Source from "./lib/ssd1306.py?raw";
 import bootSource from "./lib/boot.py?raw";
+import tecladoSource from "./lib/bb_teclado.py?raw";
 import { Board, ReplError } from "./serial/board";
 import { bleSupported, requestBleDevice } from "./serial/ble";
 import { flashMicroPython, loadFirmware } from "./serial/flasher";
@@ -255,6 +257,8 @@ function programFiles(): Record<string, string> {
   const files: Record<string, string> = { "boot.py": bootSource };
   // o MicroPython não traz o driver do OLED (a tela fica sempre ligada, em todo programa)
   files["ssd1306.py"] = ssd1306Source;
+  // teclado USB: a biblioteca (19 KB) só vai quando o programa usa o "apertar tecla no computador"
+  if (usaTeclado(workspace)) files["bb_teclado.py"] = tecladoSource;
   return files;
 }
 

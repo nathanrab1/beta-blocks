@@ -18,6 +18,7 @@ const PALETA = {
   roxo: "#6e4b8f", // mesmo tom fechado do vermelho e do marinho
   rosa: "#b5527f",
   turquesa: "#3a8f8a",
+  caramelo: "#a47148",
 };
 const EVENT_COLOUR = PALETA.verde; // "ao iniciar" e eventos
 const LED_COLOUR = PALETA.vermelho;
@@ -32,6 +33,7 @@ const MATH_COLOUR = PALETA.roxo; // dentro da Lógica, na mesma cor
 const LOGIC_COLOUR = PALETA.roxo;
 const VARIABLE_COLOUR = PALETA.rosa;
 const RADIO_COLOUR = PALETA.turquesa;
+const TECLADO_COLOUR = PALETA.caramelo;
 const SOUND_COLOUR = PALETA.azul;
 
 /** Tema: os blocos que vêm do Blockly (se, repetir, lógica, números, texto, variáveis) na mesma paleta. */
@@ -224,6 +226,21 @@ export const KEY_OPTIONS: [string, string][] = [
   ["Enter", "enter"],
   ..."abcdefghijklmnopqrstuvwxyz0123456789".split("").map((c): [string, string] => [c, c]),
 ];
+
+/** Código USB (HID) de cada tecla do menu, para o bloco "apertar tecla no computador". */
+function codigoHid(nome: string): number {
+  const especiais: Record<string, number> = { space: 44, enter: 40, right: 79, left: 80, down: 81, up: 82 };
+  if (nome in especiais) return especiais[nome];
+  if (/^[a-z]$/.test(nome)) return 4 + nome.charCodeAt(0) - 97;
+  if (/^[1-9]$/.test(nome)) return 30 + Number(nome) - 1;
+  if (nome === "0") return 39;
+  return 0;
+}
+
+/** O programa usa o teclado USB? (o app manda o bb_teclado.py junto só nesse caso) */
+export function usaTeclado(workspace: Blockly.Workspace): boolean {
+  return programBlocks(workspace).some((b) => b.type === "keyboard_press");
+}
 
 /** Marca de uma tecla enviada pela serial: "\x1d<nome>\n". */
 export const KEY_MARK = "\x1d";
@@ -645,6 +662,19 @@ export function defineBlocks(): void {
         "Liga o motor no sentido escolhido com a velocidade que vier no encaixe, de 0% (parado) a 100% " +
         "(ex.: uma variável ou o potenciômetro). M1 usa as portas 4 e 5; M2, as portas 6 e 7. " +
         "Valores fora de 0 a 100 ficam no limite.",
+    },
+    {
+      // a placa vira um teclado USB: o computador (ex.: o Scratch) recebe a tecla
+      type: "keyboard_press",
+      message0: "enviar letra %1 ao computador",
+      args0: [{ type: "field_dropdown", name: "KEY", options: KEY_OPTIONS }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: TECLADO_COLOUR,
+      tooltip:
+        "A placa vira um teclado USB e aperta (e solta) essa letra ou tecla no computador ligado pelo cabo: dá para " +
+        "controlar o Scratch com 'quando a tecla for pressionada'. Ao começar o programa, o computador leva " +
+        "uns segundos para reconhecer o teclado.",
     },
     // número do bloco do motor sem slider (sombra): de 0 a 100
     {
@@ -1294,6 +1324,7 @@ export function defineBlocks(): void {
   const sentido = (block: Blockly.Block) => (block.getFieldValue("DIR") === "CCW" ? -1 : 1);
   pythonGenerator.forBlock["motor_onoff"] = (block) =>
     `motor(${block.getFieldValue("MOTOR")}, ${block.getFieldValue("STATE") === "ON" ? 100 : 0}, ${sentido(block)})\n`;
+  pythonGenerator.forBlock["keyboard_press"] = (block) => `teclado_apertar(${codigoHid(block.getFieldValue("KEY"))})\n`;
   pythonGenerator.forBlock["motor_slider"] = (block) =>
     `motor(${block.getFieldValue("MOTOR")}, ${Number(block.getFieldValue("NUM")) || 0}, ${sentido(block)})\n`;
   pythonGenerator.forBlock["motor_run"] = (block, gen) => {
@@ -2000,6 +2031,7 @@ export function programCode(workspace: Blockly.Workspace): string {
   const thresholdHats = tops.filter((b) => b.type === "event_threshold");
   if (buttonHats.length > 0 || thresholdHats.length > 0) code += inputsRuntimeCode();
   if (usesRadio(workspace)) code += radioCode();
+  if (usaTeclado(workspace)) code += tecladoCode();
   if (programBlocks(workspace).some((b) => b.type.startsWith("sound_"))) code += soundCode(workspace);
   keyHats.forEach((hat, i) => {
     const next = hat.getNextBlock();
@@ -2134,6 +2166,42 @@ function keysRuntimeCode(): string {
     "",
     "_key_timer = Timer(1)",
     "_key_timer.init(period=15, mode=Timer.PERIODIC, callback=_bb_protegido(_tecla_ler))",
+    "",
+    "",
+  ].join("\n");
+}
+
+/** Teclado USB: a placa aparece no computador como teclado (bb_teclado.py, enviado junto). */
+function tecladoCode(): string {
+  return [
+    "# --- teclado USB (bloco 'apertar tecla no computador') ---",
+    "_tec = None",
+    "",
+    "def _tec_iniciar():",
+    "    global _tec",
+    "    try:",
+    "        import bb_teclado",
+    "        k = bb_teclado.KeyboardInterface()",
+    "        # builtin_driver: a porta serial do app continua junto com o teclado",
+    "        bb_teclado.get().init(k, builtin_driver=True)",
+    "        _tec = k",
+    "    except Exception as e:",
+    "        print('Teclado USB nao disponivel:', e)",
+    "",
+    "def teclado_apertar(codigo):",
+    "    if _tec is None:",
+    "        return",
+    "    t0 = time.ticks_ms()",
+    "    while not _tec.is_open() and time.ticks_diff(time.ticks_ms(), t0) < 3000:",
+    "        time.sleep_ms(20)  # o computador ainda esta reconhecendo o teclado",
+    "    if not _tec.is_open():",
+    "        print('Teclado USB: o computador nao reconheceu (o cabo esta num computador?)')",
+    "        return",
+    "    _tec.send_keys([codigo])",
+    "    time.sleep_ms(20)",
+    "    _tec.send_keys([])",
+    "",
+    "_tec_iniciar()",
     "",
     "",
   ].join("\n");
@@ -4387,6 +4455,12 @@ export const toolbox = {
     },
     // "criar variável", "definir", "alterar por" e o bloco redondo de cada variável (do Blockly)
     { kind: "category", name: "Variáveis", colour: VARIABLE_COLOUR, custom: "VARIABLE" },
+    {
+      kind: "category",
+      name: "Teclado", // a placa vira teclado USB do computador (ex.: para o Scratch)
+      colour: TECLADO_COLOUR,
+      contents: [{ kind: "block", type: "keyboard_press", fields: { KEY: "a" } }],
+    },
     {
       kind: "category",
       name: "Rádio",
