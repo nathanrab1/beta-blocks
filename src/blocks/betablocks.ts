@@ -667,7 +667,7 @@ export function defineBlocks(): void {
     {
       // a placa vira um teclado USB: o computador (ex.: o Scratch) recebe a tecla
       type: "keyboard_press",
-      message0: "enviar letra %1 ao computador",
+      message0: "enviar %1 ao computador",
       args0: [{ type: "field_dropdown", name: "KEY", options: KEY_OPTIONS }],
       previousStatement: null,
       nextStatement: null,

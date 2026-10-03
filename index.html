@@ -38,20 +38,26 @@
       <div id="menu-panel" class="menu-panel" hidden></div>
       <div class="brand">
         <img class="brand-logo" src="./icons/logo.svg" alt="Beta Kit" />
-        <span class="brand-sub">ESP32-S3-Zero</span>
         <span id="project-name" class="project-name"></span>
       </div>
 
       <div id="toolbar" class="toolbar">
-        <button id="btn-drive-connect" class="btn btn-ghost drive-only" title="Entra com a sua conta Google para salvar os projetos no Drive">☁ Conectar Drive</button>
-        <button id="btn-drive-save" class="btn btn-ghost drive-only" title="Salva por cima do projeto aberto, na pasta Beta Kit do seu Google Drive">☁ Salvar</button>
-        <button id="btn-drive-saveas-top" class="btn btn-ghost drive-only" title="Salva com outro nome, na pasta Beta Kit do seu Google Drive">☁ Salvar como…</button>
-        <button id="btn-drive-open" class="btn btn-ghost drive-only" title="Abre um projeto da pasta Beta Kit do seu Google Drive">☁ Meus projetos</button>
-        <span class="toolbar-sep drive-only"></span>
-        <button id="btn-save" class="btn btn-ghost" title="Baixa o projeto como arquivo .json">⬇ Baixar</button>
-        <button id="btn-load" class="btn btn-ghost" title="Abre um projeto .json">⬆ Abrir</button>
-        <button id="btn-clear" class="btn btn-ghost" title="Apaga todos os blocos e deixa só o 'ao iniciar'">🗑 Limpar</button>
-        <input id="file-load" type="file" accept=".json,application/json" hidden />
+        <!-- menu Arquivo: Drive, baixar/abrir e limpar (no celular, os itens vão direto no menu ☰) -->
+        <div id="menu-arquivo" class="arquivo">
+          <button id="btn-arquivo" class="btn btn-ghost" aria-haspopup="true" aria-expanded="false">📁 Arquivo ▾</button>
+          <div class="arquivo-painel">
+            <button id="btn-drive-connect" class="btn btn-ghost drive-only" title="Entra com a sua conta Google para salvar os projetos no Drive">☁ Conectar Drive</button>
+            <button id="btn-drive-save" class="btn btn-ghost drive-only" title="Salva por cima do projeto aberto, na pasta Beta Kit do seu Google Drive">☁ Salvar</button>
+            <button id="btn-drive-saveas-top" class="btn btn-ghost drive-only" title="Salva com outro nome, na pasta Beta Kit do seu Google Drive">☁ Salvar como…</button>
+            <button id="btn-drive-open" class="btn btn-ghost drive-only" title="Abre um projeto da pasta Beta Kit do seu Google Drive">☁ Meus projetos</button>
+            <span class="toolbar-sep drive-only"></span>
+            <button id="btn-save" class="btn btn-ghost" title="Baixa o projeto como arquivo .json">⬇ Baixar</button>
+            <button id="btn-load" class="btn btn-ghost" title="Abre um projeto .json">⬆ Abrir</button>
+            <span class="toolbar-sep"></span>
+            <button id="btn-clear" class="btn btn-ghost" title="Apaga todos os blocos e deixa só o 'ao iniciar'">🗑 Limpar</button>
+            <input id="file-load" type="file" accept=".json,application/json" hidden />
+          </div>
+        </div>
         <span class="toolbar-sep"></span>
         <button id="btn-connect" class="btn">Conectar</button>
         <button id="btn-connect-ble" class="btn btn-bt" title="Conecta sem cabo, pelo Bluetooth" aria-label="Bluetooth" hidden><img class="bt-icon" src="./icons/bluetooth.svg" alt="" /><span class="btn-label"> Bluetooth</span></button>

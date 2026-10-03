@@ -442,6 +442,24 @@ $("btn-save").addEventListener("click", () => {
   setStatus(`Projeto salvo: ${a.download}`, "ok");
 });
 
+// ---------- menu Arquivo ----------
+{
+  const menuArquivo = $("menu-arquivo");
+  const btnArquivo = $<HTMLButtonElement>("btn-arquivo");
+  const abrir = (sim: boolean) => {
+    menuArquivo.classList.toggle("aberto", sim);
+    btnArquivo.setAttribute("aria-expanded", String(sim));
+  };
+  btnArquivo.addEventListener("click", () => abrir(!menuArquivo.classList.contains("aberto")));
+  // escolheu um item ou tocou fora: fecha
+  menuArquivo.querySelector(".arquivo-painel")!.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).closest(".btn")) abrir(false);
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (!menuArquivo.contains(e.target as Node)) abrir(false);
+  });
+}
+
 // limpar: apaga tudo (blocos e variáveis) e deixa só o "ao iniciar"; Ctrl+Z desfaz de uma vez
 $("btn-clear").addEventListener("click", () => {
   if (workspace.getAllBlocks(false).length <= 1) {

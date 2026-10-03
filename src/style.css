@@ -38,7 +38,6 @@ body {
 
 .brand { display: flex; align-items: center; gap: 8px; font-size: 18px; }
 .brand-logo { height: 20px; width: auto; display: block; flex-shrink: 0; }
-.brand-sub { color: var(--muted); font-size: 13px; }
 
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .toolbar-sep { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
@@ -177,6 +176,18 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
 .drive-trash:hover { border-color: var(--danger); }
 .modal-spacer { flex: 1; }
 
+/* ---------- menu Arquivo ---------- */
+.arquivo { position: relative; }
+.arquivo-painel {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 200;
+  flex-direction: column; gap: 4px; min-width: 220px; padding: 8px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.arquivo.aberto .arquivo-painel { display: flex; }
+.arquivo-painel .btn { width: 100%; text-align: left; }
+.arquivo-painel .toolbar-sep { width: auto; height: 1px; margin: 2px 0; }
+
 /* ---------- controle dentro do app (celular) ---------- */
 .pad-view {
   position: fixed; inset: 0; z-index: 300; overflow: auto; padding: 12px 16px 24px;
@@ -208,7 +219,6 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
   .topbar { position: relative; gap: 8px; padding: 6px 8px; }
   .menu-btn { display: inline-block; padding: 5px 11px; font-size: 18px; line-height: 1; }
   .brand { flex: 1; min-width: 0; gap: 6px; font-size: 16px; }
-  .brand-sub { display: none; }
   .project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .toolbar { flex-wrap: nowrap; gap: 6px; }
   .toolbar .btn { padding: 6px 12px; font-size: 16px; white-space: nowrap; }
@@ -222,6 +232,11 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   }
   .menu-panel .btn { width: 100%; text-align: left; }
+  /* no menu ☰ do celular, os itens do Arquivo aparecem direto (sem o botão "Arquivo") */
+  .menu-panel #btn-arquivo { display: none; }
+  .menu-panel .arquivo-painel {
+    display: flex; position: static; min-width: 0; padding: 0; border: 0; box-shadow: none; background: none; gap: 6px;
+  }
   .menu-panel .toolbar-sep { width: auto; height: 1px; margin: 2px 0; }
 
   /* painel das entradas e do visor: embaixo dos blocos, recolhido (some sozinho quando não tem nada) */
