@@ -85,6 +85,11 @@ def _limpar():
 # respondia). Aqui a placa nunca chama o Bluetooth para enviar: so troca o valor
 # do TX (gatts_write, que so copia na memoria) e o app vem ler.
 #
+# Teclado Bluetooth (HID): a placa tambem e um teclado. O computador pareia uma vez (nos
+# Ajustes de Bluetooth) e o bloco "enviar letra" manda a tecla por _ble_teclado. As chaves do
+# pareamento ficam em bb_ble_chaves.json: depois de cada envio/reinicio o computador reconecta
+# sozinho. A ligacao pareada (criptografada) e a do teclado: o "?" do app nao a derruba.
+#
 # Cuidados:
 # - a irq roda na tarefa do Bluetooth: so guarda os bytes e agenda _ble_processar,
 #   que roda no programa principal. Uma excecao na irq desliga a irq para sempre.
@@ -94,11 +99,34 @@ def _limpar():
 # - excecao numa funcao agendada nao chega ao programa: para parar, P usa o
 #   _bb_ctrl_c do programa e um Ctrl-C de uma vez so pelo os.dupterm.
 import bluetooth
+import binascii
 
 _BLE_NUS = bluetooth.UUID('6E400001-B5A3-F393-E0A9-E50E24DCCA9E')
 _BLE_RX = bluetooth.UUID('6E400002-B5A3-F393-E0A9-E50E24DCCA9E')  # app -> placa
 _BLE_TX = bluetooth.UUID('6E400003-B5A3-F393-E0A9-E50E24DCCA9E')  # placa -> app
 _BLE_MON = bluetooth.UUID('6E400004-B5A3-F393-E0A9-E50E24DCCA9E')  # monitor de entradas
+_HID = bluetooth.UUID(0x1812)
+_HID_INFO = bluetooth.UUID(0x2A4A)
+_HID_MAPA = bluetooth.UUID(0x2A4B)
+_HID_CONTROLE = bluetooth.UUID(0x2A4C)
+_HID_RELATORIO = bluetooth.UUID(0x2A4D)
+_HID_PROTOCOLO = bluetooth.UUID(0x2A4E)
+_HID_REF = bluetooth.UUID(0x2908)  # "report reference": id 1, tipo entrada
+_BATERIA = bluetooth.UUID(0x180F)
+_BATERIA_NIVEL = bluetooth.UUID(0x2A19)
+_INFO = bluetooth.UUID(0x180A)
+_INFO_FABRICANTE = bluetooth.UUID(0x2A29)
+_INFO_PNP = bluetooth.UUID(0x2A50)
+# mapa do teclado (o mesmo do teclado USB, com "report id" 1 e sem os LEDs)
+_HID_MAPA_VALOR = bytes((
+    0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x85, 0x01,
+    0x05, 0x07, 0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02,
+    0x95, 0x01, 0x75, 0x08, 0x81, 0x01,
+    0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x25, 0x65, 0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00,
+    0xC0,
+))
+_CHAVES = 'bb_ble_chaves.json'  # pareamentos guardados (o computador reconecta sozinho)
+
 # as mesmas portas que o Parar pelo cabo solta (resetBoardCode no app)
 _BLE_PORTAS = tuple(range(1, 19)) + tuple(range(33, 45)) + (47, 48)
 
@@ -131,6 +159,24 @@ def _ble_mon(s):
         _ble_cmd._ble.gatts_write(_ble_cmd._mon, s)
     except Exception:
         pass
+
+
+def _ble_salvar_chaves(_=None):
+    try:
+        c = _ble_cmd._chaves
+        with open(_CHAVES, 'w') as f:
+            h = lambda x: binascii.hexlify(x).decode()
+            json.dump([[t, h(k), h(v)] for (t, k), v in c.items()], f)
+    except Exception as e:
+        print('Bluetooth chaves:', e)
+
+
+def _ble_teclado(codigo):
+    # chamada pelo programa (bloco "enviar letra"): aperta e solta a tecla no computador pareado
+    try:
+        return _ble_cmd._tecla(codigo)
+    except Exception:
+        return False
 
 
 def _ble_parar():
@@ -182,15 +228,47 @@ class _BleComandos:
         self._carga_conn = None
         self._falta = 0
         self._id = b''
+        self._hid = set()  # ligacoes pareadas (criptografadas): o computador usando o teclado
+        self._chaves = {}  # (tipo, chave) -> valor: pareamentos guardados
+        try:
+            with open(_CHAVES) as f:
+                for t, k, v in json.load(f):
+                    self._chaves[(t, binascii.unhexlify(k))] = binascii.unhexlify(v)
+        except Exception:
+            pass
         b = self._ble = bluetooth.BLE()
         b.active(True)
         try:
             b.config(gap_name=nome, mtu=517)
         except Exception:
             pass
-        ((self._tx, self._rx, self._mon),) = b.gatts_register_services(
-            ((_BLE_NUS, ((_BLE_TX, 0x0002 | 0x0010), (_BLE_RX, 0x0008 | 0x0004),
-                         (_BLE_MON, 0x0002))),))  # read, notify; write; read
+        try:  # pareamento sem senha (teclado nao tem tela), guardando as chaves
+            b.config(bond=True, le_secure=True, mitm=False, io=3)
+        except Exception:
+            pass
+        ((self._tx, self._rx, self._mon),
+         (self._hid_info, self._hid_mapa, self._hid_ctrl, self._hid_rel, self._hid_ref, self._hid_prot),
+         (self._bat,), (self._fab, self._pnp)) = b.gatts_register_services((
+            (_BLE_NUS, ((_BLE_TX, 0x0002 | 0x0010), (_BLE_RX, 0x0008 | 0x0004),
+                        (_BLE_MON, 0x0002))),  # read, notify; write; read
+            (_HID, (
+                (_HID_INFO, 0x0002),
+                (_HID_MAPA, 0x0002 | 0x0200),  # ler o mapa exige pareamento: o computador pareia
+                (_HID_CONTROLE, 0x0004),
+                (_HID_RELATORIO, 0x0002 | 0x0010 | 0x0200, ((_HID_REF, 0x0002),)),
+                (_HID_PROTOCOLO, 0x0002 | 0x0004),
+            )),
+            (_BATERIA, ((_BATERIA_NIVEL, 0x0002 | 0x0010),)),
+            (_INFO, ((_INFO_FABRICANTE, 0x0002), (_INFO_PNP, 0x0002))),
+        ))
+        b.gatts_write(self._hid_info, bytes((0x11, 0x01, 0x00, 0x02)))  # HID 1.11, conectavel
+        b.gatts_write(self._hid_mapa, _HID_MAPA_VALOR)
+        b.gatts_write(self._hid_rel, bytes(8))
+        b.gatts_write(self._hid_ref, bytes((1, 1)))  # report id 1, entrada
+        b.gatts_write(self._hid_prot, bytes((1,)))  # modo "report"
+        b.gatts_write(self._bat, bytes((100,)))
+        b.gatts_write(self._fab, b'Beta Kit')
+        b.gatts_write(self._pnp, bytes((0x02, 0xE5, 0x02, 0x01, 0xBB, 0x00, 0x01)))  # USB, vid/pid/versao
         b.gatts_set_buffer(self._rx, 512, True)
         b.gatts_set_buffer(self._tx, 512)  # a lista de teclas pode ser longa
         b.gatts_set_buffer(self._mon, 256)
@@ -200,7 +278,9 @@ class _BleComandos:
     def _anunciar(self):
         # nome no anuncio (aparece na lista do Chrome) e o servico na resposta ao scan.
         # Continua anunciando mesmo com uma ligacao aberta: outro aparelho pode tomar a placa.
-        adv = b'\x02\x01\x06' + bytes((len(self._nome) + 1, 0x09)) + self._nome
+        # aparencia "teclado" (0x03C1) e o servico HID (0x1812): o computador mostra como teclado
+        adv = (b'\x02\x01\x06' + b'\x03\x19\xc1\x03' + b'\x03\x03\x12\x18'
+               + bytes((len(self._nome) + 1, 0x09)) + self._nome)
         resp = b'\x11\x07' + bytes(_BLE_NUS)
         try:
             self._ble.gap_advertise(100000, adv_data=adv, resp_data=resp)
@@ -221,17 +301,59 @@ class _BleComandos:
                 self._fila.append((dados[0], None))
                 self._agendar()
                 self._anunciar()
-            elif ev == 2:  # app desconectou
+            elif ev == 2:  # app (ou o computador do teclado) desconectou
                 self._conns.pop(dados[0], None)
                 self._bufs.pop(dados[0], None)
+                self._hid.discard(dados[0])
                 if self._carga_conn == dados[0]:
                     self._carga = None
                 self._anunciar()
             elif ev == 21:  # tamanho do pacote combinado com o app
                 if dados[0] in self._conns:
                     self._conns[dados[0]] = dados[1]
+            elif ev == 28:  # ligacao criptografada (pareada): e o computador usando o teclado
+                if dados[1]:
+                    self._hid.add(dados[0])
+            elif ev == 29:  # o Bluetooth pede uma chave guardada
+                return self._chave(*dados)
+            elif ev == 30:  # o Bluetooth quer guardar (ou apagar) uma chave
+                t, k, v = dados
+                k = bytes(k)
+                if v is None:
+                    self._chaves.pop((t, k), None)
+                else:
+                    self._chaves[(t, k)] = bytes(v)
+                try:  # gravar o arquivo fora da irq
+                    micropython.schedule(_ble_salvar_chaves, None)
+                except RuntimeError:
+                    pass
+                return True
         except Exception:
             pass
+
+    def _chave(self, t, i, k):
+        if k is None:  # a i-esima chave desse tipo
+            n = 0
+            for (tt, _), v in self._chaves.items():
+                if tt == t:
+                    if n == i:
+                        return v
+                    n += 1
+            return None
+        return self._chaves.get((t, bytes(k)), None)
+
+    def _tecla(self, codigo):
+        # aperta e solta a tecla em cada computador pareado; False se nenhum estiver ligado
+        if not self._hid:
+            return False
+        for c in list(self._hid):
+            try:
+                self._ble.gatts_notify(c, self._hid_rel, bytes((0, 0, codigo, 0, 0, 0, 0, 0)))
+                time.sleep_ms(15)
+                self._ble.gatts_notify(c, self._hid_rel, bytes(8))
+            except Exception:
+                pass
+        return True
 
     def _agendar(self):
         if self._agendado:
@@ -277,7 +399,8 @@ class _BleComandos:
         k, arg = cmd[:1], cmd[1:]
         try:
             if k == b'?':
-                outras = [c for c in self._conns if c != conn]
+                # o computador pareado (teclado) nao conta: fica ligado junto com o app
+                outras = [c for c in self._conns if c != conn and c not in self._hid]
                 if arg == b'r' and outras:
                     self._responder(id_, 'ocupada')  # o app desiste e solta esta ligacao
                     return

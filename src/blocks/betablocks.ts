@@ -672,9 +672,9 @@ export function defineBlocks(): void {
       nextStatement: null,
       colour: TECLADO_COLOUR,
       tooltip:
-        "A placa vira um teclado USB e aperta (e solta) essa letra ou tecla no computador ligado pelo cabo: dá para " +
-        "controlar o Scratch com 'quando a tecla for pressionada'. Ao começar o programa, o computador leva " +
-        "uns segundos para reconhecer o teclado.",
+        "Aperta (e solta) essa letra ou tecla no computador, como um teclado: dá para controlar o Scratch com " +
+        "'quando a tecla for pressionada'. Sem fio: pareie a placa (Beta-XXXX) uma vez nos Ajustes de Bluetooth " +
+        "do computador. Pelo cabo USB num computador também funciona.",
     },
     // número do bloco do motor sem slider (sombra): de 0 a 100
     {
@@ -2188,18 +2188,19 @@ function tecladoCode(): string {
     "    except Exception as e:",
     "        print('Teclado USB nao disponivel:', e)",
     "",
+    "# cabo USB num computador: teclado USB; senao, o teclado Bluetooth (boot.py, computador pareado)",
     "def teclado_apertar(codigo):",
-    "    if _tec is None:",
+    "    if _tec is not None and _tec.is_open():",
+    "        _tec.send_keys([codigo])",
+    "        time.sleep_ms(20)",
+    "        _tec.send_keys([])",
     "        return",
-    "    t0 = time.ticks_ms()",
-    "    while not _tec.is_open() and time.ticks_diff(time.ticks_ms(), t0) < 3000:",
-    "        time.sleep_ms(20)  # o computador ainda esta reconhecendo o teclado",
-    "    if not _tec.is_open():",
-    "        print('Teclado USB: o computador nao reconheceu (o cabo esta num computador?)')",
-    "        return",
-    "    _tec.send_keys([codigo])",
-    "    time.sleep_ms(20)",
-    "    _tec.send_keys([])",
+    "    try:",
+    "        if _ble_teclado(codigo):",
+    "            return",
+    "    except NameError:  # boot.py antigo, sem teclado Bluetooth",
+    "        pass",
+    "    print('Teclado: nenhum computador ligado (pareie a placa no Bluetooth do computador)')",
     "",
     "_tec_iniciar()",
     "",
