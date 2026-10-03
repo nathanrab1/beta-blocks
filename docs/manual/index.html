@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Manual do Beta Blocks</title>
+    <link rel="stylesheet" href="./manual.css" />
+  </head>
+  <body>
+    <!-- área escondida onde o Blockly desenha os blocos (manual.ts copia cada desenho) -->
+    <div id="blockly-area"></div>
+
+    <!-- ===================== CAPA ===================== -->
+    <section class="capa">
+      <div class="faixa">
+        <span style="--c: #66a35c"></span><span style="--c: #9b3a3a"></span><span style="--c: #2e4784"></span>
+        <span style="--c: #e5c15c"></span><span style="--c: #cc6239"></span><span style="--c: #7aa3b5"></span>
+        <span style="--c: #6e4b8f"></span><span style="--c: #b5527f"></span><span style="--c: #3a8f8a"></span>
+      </div>
+      <img class="logo" src="../../public/icons/logo.svg" alt="beta kit" />
+      <h1>Beta Blocks</h1>
+      <p class="sub">Manual de programação em blocos</p>
+      <p class="capa-texto">
+        Monte blocos como num quebra-cabeça, envie para a placa e veja ela ganhar vida: luzes, sons, motores,
+        jogos e muito mais!
+      </p>
+      <div class="capa-pe">ESP32-S3 · Beta Kit</div>
+    </section>
+
+    <!-- ===================== SUMÁRIO ===================== -->
+    <section class="pagina sumario">
+      <h2 class="titulo-secao">O que tem neste manual</h2>
+      <ol class="sumario-lista">
+        <li>Primeiros passos</li>
+        <li>Como funciona um programa</li>
+        <li>
+          Os blocos
+          <ul id="sumario-categorias" class="sumario-cats"></ul>
+        </li>
+        <li>Projetos para fazer</li>
+        <li>Deu problema? Veja aqui</li>
+      </ol>
+      <div class="dica">
+        <strong>💡 Dica:</strong> você não precisa ler tudo de uma vez. Comece pelos primeiros passos, faça o
+        primeiro projeto e depois volte para descobrir blocos novos!
+      </div>
+    </section>
+
+    <!-- ===================== PRIMEIROS PASSOS ===================== -->
+    <section class="pagina">
+      <h2 class="titulo-secao">1. Primeiros passos</h2>
+
+      <div class="passo">
+        <span class="n">1</span>
+        <div>
+          <h3>Abra o Beta Blocks</h3>
+          <p>
+            No computador, abra o Beta Blocks no <b>Google Chrome</b> (ou no Edge). No celular Android, use o Chrome
+            — e dá para instalar como app: menu <b>☰ → 📲 Instalar app</b>.
+          </p>
+        </div>
+      </div>
+
+      <div class="passo">
+        <span class="n">2</span>
+        <div>
+          <h3>Conecte a placa</h3>
+          <p>
+            <b>Pelo cabo:</b> ligue a placa no computador com um cabo USB-C e clique em <b>Conectar</b>.<br />
+            <b>Sem fio:</b> clique no botão azul de <b>Bluetooth</b> e escolha a placa na lista (o nome começa com
+            <b>Beta-</b>).
+          </p>
+        </div>
+      </div>
+
+      <div class="passo">
+        <span class="n">3</span>
+        <div>
+          <h3>Monte os blocos</h3>
+          <p>
+            À esquerda ficam as categorias de blocos. Clique numa categoria, arraste um bloco para o meio e encaixe
+            embaixo do <b>ao iniciar</b>. Para apagar um bloco, arraste ele de volta para a lista.
+          </p>
+        </div>
+      </div>
+
+      <div class="passo">
+        <span class="n">4</span>
+        <div>
+          <h3>Envie para a placa</h3>
+          <p>
+            Clique no <b>▶</b> verde. O programa vai para a placa e começa a rodar! Ele fica guardado: quando você
+            ligar a placa de novo, ele roda sozinho. Para parar, use <b>■ Parar</b>.
+          </p>
+        </div>
+      </div>
+
+      <div class="passo">
+        <span class="n">5</span>
+        <div>
+          <h3>Guarde o seu projeto</h3>
+          <p>
+            Use <b>⬇ Baixar</b> para salvar no computador, ou <b>☁ Salvar</b> para guardar no Google Drive. Para
+            começar do zero, clique em <b>🗑 Limpar</b>.
+          </p>
+        </div>
+      </div>
+
+      <div class="mapa">
+        <h3>Onde ligar cada coisa na placa</h3>
+        <table>
+          <tr><td class="p">1, 2, 3</td><td>Módulos: botões, sensores, potenciômetro, LED, DHT11</td></tr>
+          <tr><td class="p">4 e 5</td><td>Motor M1</td></tr>
+          <tr><td class="p">6 e 7</td><td>Motor M2</td></tr>
+          <tr><td class="p">8, 9, 10</td><td>LED colorido (vermelho, verde e azul)</td></tr>
+          <tr><td class="p">11 e 12</td><td>Visor (a telinha)</td></tr>
+          <tr><td class="p">13</td><td>Buzzer (o som)</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===================== COMO FUNCIONA ===================== -->
+    <section class="pagina">
+      <h2 class="titulo-secao">2. Como funciona um programa</h2>
+      <p class="texto">
+        Um programa é uma lista de ordens. A placa faz uma ordem de cada vez, de cima para baixo, como uma receita.
+      </p>
+      <div class="explica">
+        <div class="ex-img" data-programa="piscar"></div>
+        <div>
+          <p>Este programa faz o LED piscar em vermelho:</p>
+          <ol>
+            <li><b>ao iniciar</b>: tudo começa aqui, quando a placa liga.</li>
+            <li><b>repetir para sempre</b>: faz os blocos de dentro de novo, de novo e de novo...</li>
+            <li>acende o LED vermelho, espera meio segundo, apaga, espera meio segundo.</li>
+          </ol>
+        </div>
+      </div>
+      <div class="cores">
+        <h3>As cores dos blocos</h3>
+        <p>Cada categoria tem uma cor. Assim fica fácil achar de onde veio cada bloco!</p>
+        <ul id="legenda-cores" class="sumario-cats"></ul>
+      </div>
+      <div class="dica">
+        <strong>💡 Blocos soltos não rodam!</strong> Um bloco só funciona se estiver encaixado num bloco de evento,
+        como o <b>ao iniciar</b> ou o <b>quando clicar botão</b>.
+      </div>
+    </section>
+
+    <!-- ===================== BLOCOS ===================== -->
+    <div id="blocos"></div>
+
+    <!-- ===================== PROJETOS ===================== -->
+    <section class="pagina">
+      <h2 class="titulo-secao">4. Projetos para fazer</h2>
+
+      <div class="projeto">
+        <h3>🌡️ Termômetro no visor</h3>
+        <p>Ligue o sensor DHT11 na porta 3. O visor mostra a temperatura a cada 2 segundos.</p>
+        <div class="ex-img" data-programa="termometro"></div>
+        <p class="desafio"><b>Desafio:</b> acenda o LED vermelho quando passar de 30 °C!</p>
+      </div>
+
+      <div class="projeto">
+        <h3>🌀 Ventilador com controle de velocidade</h3>
+        <p>Ligue o motor no M1 e o potenciômetro na porta 1. Gire o potenciômetro para mudar a velocidade.</p>
+        <div class="ex-img" data-programa="ventilador"></div>
+        <p class="desafio"><b>Desafio:</b> troque para ↺ anti-horário e veja o que acontece.</p>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="projeto">
+        <h3>🎵 Botão musical</h3>
+        <p>Aperte o botão da porta 1: o LED vira arco-íris e toca uma música!</p>
+        <div class="ex-img" data-programa="musica"></div>
+        <p class="desafio"><b>Desafio:</b> faça a sua própria música com o bloco ✎ Editar.</p>
+      </div>
+
+      <div class="projeto">
+        <h3>🐱 Controle para o Scratch</h3>
+        <p>
+          Pareie a placa no Bluetooth do computador (ela aparece como um teclado). No Scratch, use "quando a tecla
+          espaço for pressionada". O botão 1 aperta o espaço e o botão 2 a seta para a direita.
+        </p>
+        <div class="ex-img" data-programa="scratch"></div>
+      </div>
+
+      <div class="projeto">
+        <h3>🦖 Jogo do dinossauro</h3>
+        <p>Com o visor e dois botões: porta 1 abaixa e porta 2 pula. Também dá para jogar com as setas!</p>
+        <div class="ex-img" data-programa="dino"></div>
+        <p class="desafio"><b>Desafio:</b> quantos pontos você consegue? Bata o recorde!</p>
+      </div>
+    </section>
+
+    <!-- ===================== PROBLEMAS ===================== -->
+    <section class="pagina">
+      <h2 class="titulo-secao">5. Deu problema? Veja aqui</h2>
+      <div class="problema">
+        <h3>O botão Conectar ou Bluetooth não funciona</h3>
+        <p>Use o <b>Google Chrome</b> ou o Edge. No iPhone, o Bluetooth só funciona pelo app <b>Bluefy</b>.</p>
+      </div>
+      <div class="problema">
+        <h3>A placa não aparece na lista do Bluetooth</h3>
+        <p>
+          Confira se a placa está ligada e perto. A placa conversa com um aparelho por vez: desconecte do outro
+          celular ou computador. No Mac, veja se o Chrome tem permissão de Bluetooth nos Ajustes.
+        </p>
+      </div>
+      <div class="problema">
+        <h3>Enviei o programa e nada acontece</h3>
+        <p>
+          Veja se os blocos estão encaixados num evento (como o <b>ao iniciar</b>) e se o módulo está na porta
+          certa. Pelo cabo, a aba <b>Console</b> mostra mensagens da placa.
+        </p>
+      </div>
+      <div class="problema">
+        <h3>A placa nunca foi usada (não tem MicroPython)</h3>
+        <p>
+          No computador, segure o botão <b>BOOT</b>, aperte <b>RESET</b>, solte o BOOT e clique em
+          <b>Gravar MicroPython</b>. Depois aperte RESET e conecte.
+        </p>
+      </div>
+      <div class="problema">
+        <h3>O Bluetooth caiu depois de enviar</h3>
+        <p>
+          É normal: depois de cada envio a placa reinicia e a ligação cai por 1 ou 2 segundos. O app reconecta
+          sozinho.
+        </p>
+      </div>
+      <div class="problema">
+        <h3>O teclado não digita no Scratch</h3>
+        <p>
+          Pareie a placa uma vez nos Ajustes de Bluetooth do computador (ela aparece como teclado
+          <b>Beta-…</b>). Depois de cada envio, ela reconecta sozinha.
+        </p>
+      </div>
+      <div class="fim">
+        <img class="logo-pequeno" src="../../public/icons/logo.svg" alt="beta kit" />
+        <p>Agora é com você: invente, teste e divirta-se! 🚀</p>
+      </div>
+    </section>
+
+    <script type="module" src="./manual.ts"></script>
+  </body>
+</html>

@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "manual": "node docs/manual/gerar.mjs"
   },
   "dependencies": {
     "blockly": "^13.3.0",

@@ -1,0 +1,142 @@
+/* Manual do Beta Blocks: A4 retrato, identidade do Beta Kit (grafite #3b3c44, azul-claro #80e7ff e as
+   cores das categorias). */
+@page {
+  size: A4;
+  margin: 16mm 15mm 16mm;
+}
+:root {
+  --grafite: #3b3c44;
+  --azul: #80e7ff;
+  --cinza: #6b7280;
+  --linha: #e4e6eb;
+  --fundo: #f6f7f9;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #fff; color: var(--grafite); }
+body {
+  font-family: -apple-system, "Avenir Next", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 11.5pt;
+  line-height: 1.45;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+#blockly-area { position: absolute; left: -10000px; top: 0; width: 2000px; height: 2000px; }
+h1, h2, h3 { margin: 0; line-height: 1.2; }
+b, strong { font-weight: 700; }
+
+/* ---------- capa ---------- */
+.capa {
+  height: 265mm;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  position: relative;
+  break-after: page;
+}
+.capa .faixa { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 4mm; justify-content: center; }
+.capa .faixa span { width: 14mm; height: 14mm; border-radius: 3mm; background: var(--c); }
+.capa .logo { width: 70mm; margin-bottom: 10mm; }
+.capa h1 { font-size: 40pt; letter-spacing: -0.5pt; }
+.capa .sub { font-size: 16pt; color: var(--cinza); margin: 3mm 0 12mm; }
+.capa .capa-texto { max-width: 120mm; font-size: 13pt; }
+.capa .capa-pe { position: absolute; bottom: 0; font-size: 10pt; color: var(--cinza); letter-spacing: 1pt; }
+
+/* ---------- páginas ---------- */
+.pagina { break-before: page; }
+.titulo-secao {
+  font-size: 22pt;
+  margin-bottom: 6mm;
+  padding-bottom: 3mm;
+  border-bottom: 1.2mm solid var(--azul);
+  display: inline-block;
+}
+.texto { font-size: 12.5pt; }
+.dica {
+  margin-top: 8mm;
+  padding: 4mm 5mm;
+  border-radius: 3mm;
+  background: #e9fbff;
+  border-left: 1.5mm solid var(--azul);
+}
+
+/* sumário */
+.sumario-lista { font-size: 14pt; padding-left: 7mm; }
+.sumario-lista > li { margin: 3mm 0; font-weight: 700; }
+.sumario-cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm 6mm; padding: 3mm 0 0; margin: 0; list-style: none; }
+.sumario-cats li { font-weight: 500; font-size: 11.5pt; display: flex; align-items: center; gap: 2mm; }
+.ponto { display: inline-block; width: 4mm; height: 4mm; border-radius: 1mm; background: var(--cor); flex-shrink: 0; }
+
+/* primeiros passos */
+.passo { display: flex; gap: 5mm; margin-bottom: 5mm; break-inside: avoid; }
+.passo .n {
+  flex-shrink: 0; width: 10mm; height: 10mm; border-radius: 50%;
+  background: var(--grafite); color: #fff; font-weight: 700; font-size: 14pt;
+  display: flex; align-items: center; justify-content: center;
+}
+.passo h3 { font-size: 13pt; margin-bottom: 1mm; }
+.passo p { margin: 0; }
+.mapa { margin-top: 6mm; padding: 4mm 5mm; border-radius: 3mm; background: var(--fundo); break-inside: avoid; }
+.mapa h3 { margin-bottom: 2mm; }
+.mapa table { border-collapse: collapse; width: 100%; }
+.mapa td { padding: 1.5mm 2mm; border-top: 0.3mm solid var(--linha); }
+.mapa td.p { font-weight: 700; width: 30mm; white-space: nowrap; }
+
+/* como funciona */
+.explica { display: flex; gap: 6mm; align-items: flex-start; margin: 5mm 0; }
+.explica .ex-img { flex: 0 0 auto; }
+.explica ol { padding-left: 5mm; margin: 2mm 0 0; }
+.explica li { margin-bottom: 1.5mm; }
+.ex-img svg { max-width: 100%; height: auto; display: block; }
+
+/* ---------- categorias de blocos ---------- */
+.categoria { break-before: page; }
+.categoria h2 {
+  font-size: 22pt;
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+  padding: 3mm 5mm;
+  border-radius: 3mm;
+  background: var(--cor);
+  color: #fff;
+}
+.categoria h2 .ponto { background: #fff; opacity: 0.85; }
+.categoria .intro { font-size: 12.5pt; margin: 4mm 0 6mm; }
+.lista { display: flex; flex-direction: column; gap: 4mm; }
+.card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 5mm;
+  align-items: center;
+  padding: 3mm 4mm;
+  border: 0.3mm solid var(--linha);
+  border-left: 1.5mm solid var(--cor);
+  border-radius: 3mm;
+  break-inside: avoid;
+}
+.card .img svg { max-width: 100%; height: auto; display: block; }
+.card p { margin: 0; }
+.rotulo { margin: 3mm 0 0; font-weight: 700; color: var(--cor); text-transform: uppercase; letter-spacing: 0.6pt; font-size: 10pt; }
+.aviso { margin: 0; padding: 2.5mm 4mm; border-radius: 2mm; background: #fbecec; color: #9b3a3a; font-weight: 700; }
+
+/* ---------- projetos ---------- */
+.projeto { margin-bottom: 8mm; padding: 4mm 5mm; border-radius: 3mm; background: var(--fundo); break-inside: avoid; }
+.projeto h3 { font-size: 14pt; margin-bottom: 2mm; }
+.projeto p { margin: 0 0 3mm; }
+.projeto .ex-img { background: #fff; border-radius: 2mm; padding: 3mm; margin-bottom: 3mm; }
+.desafio { color: #3a8f8a; }
+
+/* ---------- problemas ---------- */
+.problema { margin-bottom: 5mm; padding-left: 4mm; border-left: 1mm solid var(--azul); break-inside: avoid; }
+.problema h3 { font-size: 12.5pt; margin-bottom: 1mm; }
+.problema p { margin: 0; }
+.fim { margin-top: 12mm; text-align: center; }
+.fim .logo-pequeno { width: 35mm; }
+.fim p { font-size: 13pt; font-weight: 700; }
+
+/* na tela (antes de imprimir): parecido com páginas */
+@media screen {
+  body { max-width: 210mm; margin: 0 auto; padding: 16mm 15mm; background: #fff; }
+}
