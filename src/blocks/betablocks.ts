@@ -51,6 +51,21 @@ export const THEME = Blockly.Theme.defineTheme("betablocks", {
   },
 });
 
+/** Sentido do motor: horário = força na 1ª porta (4 no M1, 6 no M2). */
+const SENTIDO_OPCOES: [string, string][] = [["horário", "CW"], ["anti-horário", "CCW"]];
+const sentidoField = { type: "field_dropdown", name: "DIR", options: SENTIDO_OPCOES };
+/** Setas circulares brancas e grossas (o "↻" da fonte ficava pequeno demais); trocam com o menu. */
+const setaSvg = (corpo: string) =>
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8" ' +
+      `stroke-linecap="round" stroke-linejoin="round">${corpo}</svg>`,
+  );
+const SETA_HORARIO = setaSvg('<polyline points="22 4 22 10 16 10"/><path d="M19.6 15a8.5 8.5 0 1 1-2-8.8L22 10"/>');
+const SETA_ANTI = setaSvg('<polyline points="2 4 2 10 8 10"/><path d="M4.4 15a8.5 8.5 0 1 0 2-8.8L2 10"/>');
+const setaField = { type: "field_image", name: "DIR_ICON", src: SETA_HORARIO, width: 22, height: 22, alt: "" };
+const motorField = { type: "field_dropdown", name: "MOTOR", options: [["M1", "1"], ["M2", "2"]] };
+
 /** Portas dos módulos do kit (buzzer, raquete do Pong): escolhidas num menu. */
 const PORTAS_1A3: [string, string][] = [["1", "1"], ["2", "2"], ["3", "3"]];
 const NOTE_OPTIONS: [string, string][] = [
@@ -241,7 +256,7 @@ class FieldSliderInline extends Blockly.Field<number> {
   private static readonly H = 24;
   // fixos (static): o Blockly valida o valor inicial ainda dentro do super(), antes de existirem
   // campos da instância — com min/max da instância a conta dava NaN e a bolinha ia para o canto
-  private static readonly MIN = -100;
+  private static readonly MIN = 0;
   private static readonly MAX = 100;
   private knob: SVGCircleElement | null = null;
   private track: SVGRectElement | null = null;
@@ -278,7 +293,6 @@ class FieldSliderInline extends Blockly.Field<number> {
       { x: 8, y: H / 2 - 2, width: W - 16, height: 4, rx: 2, fill: "rgba(255,255,255,0.55)" },
       g,
     );
-    Blockly.utils.dom.createSvgElement(svg.RECT, { x: W / 2 - 1, y: H / 2 - 6, width: 2, height: 12, fill: "#fff" }, g); // o 0
     this.knob = Blockly.utils.dom.createSvgElement(
       svg.CIRCLE,
       { cy: H / 2, r: 8, fill: "#fff", stroke: "rgba(0,0,0,0.25)", "stroke-width": 1 },
@@ -320,7 +334,7 @@ class FieldSliderInline extends Blockly.Field<number> {
     const f = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
     const { MIN, MAX } = FieldSliderInline;
     let v = Math.round(MIN + f * (MAX - MIN));
-    if (Math.abs(v) <= 3) v = 0; // fica fácil parar no 0
+    if (v <= 3) v = 0; // fica fácil parar no 0
     this.setValue(v);
     this.onSlide?.(this.getValue() ?? v);
   }
@@ -346,10 +360,28 @@ export function defineBlocks(): void {
     };
     def.bbAmarelo = true;
   }
+  // motor: a seta ao lado do menu de sentido acompanha a escolha
+  if (!Blockly.Extensions.isRegistered("motor_seta")) {
+    Blockly.Extensions.register("motor_seta", function (this: Blockly.Block) {
+      const seta = this.getField("DIR_ICON")!;
+      const mostrar = (v: unknown) => seta.setValue(v === "CCW" ? SETA_ANTI : SETA_HORARIO);
+      this.getField("DIR")!.setValidator((v: unknown) => {
+        mostrar(v);
+        return undefined; // aceita o valor como veio
+      });
+      mostrar(this.getFieldValue("DIR"));
+    });
+  }
   // DHT11: começa na porta 3
   if (!Blockly.Extensions.isRegistered("porta_padrao_3")) {
     Blockly.Extensions.register("porta_padrao_3", function (this: Blockly.Block) {
       this.setFieldValue("3", "PIN");
+    });
+  }
+  // Pong contra a máquina: começa na dificuldade 3 (a máquina de antes)
+  if (!Blockly.Extensions.isRegistered("pong_dificuldade")) {
+    Blockly.Extensions.register("pong_dificuldade", function (this: Blockly.Block) {
+      this.setFieldValue("3", "DIFICULDADE");
     });
   }
   // invasores: atirar começa na porta 2 (a nave fica na 1)
@@ -377,7 +409,7 @@ export function defineBlocks(): void {
         if (Number(num.getValue()) !== v) num.setValue(v);
       };
       num.setValidator((v: unknown) => {
-        const n = Math.round(Math.max(-100, Math.min(100, Number(v) || 0)));
+        const n = Math.round(Math.max(0, Math.min(100, Number(v) || 0)));
         if (slider.getValue() !== n) slider.setValue(n);
         return n;
       });
@@ -492,6 +524,7 @@ export function defineBlocks(): void {
           type: "field_dropdown",
           name: "COLOR",
           options: [
+            ["🌈 arco-íris", "ARCOIRIS"], // passa por todas as cores, em segundo plano
             ["vermelho", "VERMELHO"],
             ["verde", "VERDE"],
             ["azul", "AZUL"],
@@ -507,7 +540,9 @@ export function defineBlocks(): void {
       previousStatement: null,
       nextStatement: null,
       colour: LED_COLOUR,
-      tooltip: "Acende o LED RGB (portas 8, 9 e 10) com uma cor pronta.",
+      tooltip:
+        "Acende o LED RGB (portas 8, 9 e 10) com uma cor pronta. Arco-íris: fica passando por todas as cores " +
+        "(uma volta a cada ~3 s) enquanto o programa segue, até outro bloco de LED.",
     },
     {
       type: "led_off",
@@ -559,60 +594,63 @@ export function defineBlocks(): void {
     {
       // ligar/desligar, como o "ligar porta": ligar = 100% (para a frente), desligar = 0%
       type: "motor_onoff",
-      message0: "%1 motor %2",
+      message0: "%1 motor %2 %3 %4",
       args0: [
         { type: "field_dropdown", name: "STATE", options: [["ligar", "ON"], ["desligar", "OFF"]] },
-        { type: "field_dropdown", name: "MOTOR", options: [["M1", "1"], ["M2", "2"]] },
+        motorField,
+        setaField,
+        sentidoField,
       ],
+      extensions: ["motor_seta"],
       previousStatement: null,
       nextStatement: null,
       colour: PORT_COLOUR,
       tooltip:
-        "Liga o motor na força máxima (100%, para a frente) ou desliga (0%). M1 usa as portas 4 e 5; " +
-        "M2, as portas 6 e 7. Para escolher a velocidade ou girar para trás, use os outros blocos do motor.",
+        "Liga o motor na força máxima (100%) no sentido escolhido, ou desliga (0%). M1 usa as portas 4 e 5; " +
+        "M2, as portas 6 e 7. Horário: força na primeira porta; anti-horário: na segunda (se girar ao contrário, " +
+        "inverta os fios do motor).",
     },
     {
       // com slider: arrastar a bolinha ou digitar o número (um acompanha o outro); nada encaixa aqui
       type: "motor_slider",
-      message0: "motor %1 %2 %3 %%",
+      message0: "motor %1 %2 %3 %4 %5 %%",
       args0: [
-        { type: "field_dropdown", name: "MOTOR", options: [["M1", "1"], ["M2", "2"]] },
-        { type: "field_slider_inline", name: "SLIDER", value: 0, min: -100, max: 100 },
-        { type: "field_number", name: "NUM", value: 0, min: -100, max: 100, precision: 1 },
+        motorField,
+        setaField,
+        sentidoField,
+        { type: "field_slider_inline", name: "SLIDER", value: 0 },
+        { type: "field_number", name: "NUM", value: 0, min: 0, max: 100, precision: 1 },
       ],
-      extensions: ["motor_slider_sync"],
+      extensions: ["motor_slider_sync", "motor_seta"],
       inputsInline: true,
       previousStatement: null,
       nextStatement: null,
       colour: PORT_COLOUR,
       tooltip:
-        "Liga o motor de -100% a 100%: arraste a bolinha ou digite o número. M1 usa as portas 4 e 5; M2, as " +
-        "portas 6 e 7. Positivo gira para um lado (força na primeira porta), negativo para o outro (força na " +
-        "segunda), 0% para. Para usar uma variável ou um sensor, use o outro bloco do motor.",
+        "Liga o motor de 0% (parado) a 100% no sentido escolhido: arraste a bolinha ou digite o número. " +
+        "M1 usa as portas 4 e 5; M2, as portas 6 e 7. Para usar uma variável ou um sensor, use o outro bloco do motor.",
     },
     {
       // sem slider: a velocidade vem do encaixe (número, variável, sensor, conta)
       // (projetos antigos podem ter o campo SLIDER aqui: o Blockly ignora)
       type: "motor_run",
-      message0: "motor %1 velocidade %2 %%",
-      args0: [
-        { type: "field_dropdown", name: "MOTOR", options: [["M1", "1"], ["M2", "2"]] },
-        { type: "input_value", name: "SPEED", check: "Number" },
-      ],
+      message0: "motor %1 %2 %3 velocidade %4 %%",
+      args0: [motorField, setaField, sentidoField, { type: "input_value", name: "SPEED", check: "Number" }],
+      extensions: ["motor_seta"],
       inputsInline: true,
       previousStatement: null,
       nextStatement: null,
       colour: PORT_COLOUR,
       tooltip:
-        "Liga o motor com a velocidade que vier no encaixe, de -100% a 100% (ex.: uma variável ou o " +
-        "potenciômetro passando pelo 'converter'). M1 usa as portas 4 e 5; M2, as portas 6 e 7. " +
-        "Positivo gira para um lado, negativo para o outro, 0% para.",
+        "Liga o motor no sentido escolhido com a velocidade que vier no encaixe, de 0% (parado) a 100% " +
+        "(ex.: uma variável ou o potenciômetro). M1 usa as portas 4 e 5; M2, as portas 6 e 7. " +
+        "Valores fora de 0 a 100 ficam no limite.",
     },
-    // número do bloco do motor sem slider (sombra): de -100 a 100
+    // número do bloco do motor sem slider (sombra): de 0 a 100
     {
       type: "motor_pct",
       message0: "%1",
-      args0: [{ type: "field_number", name: "NUM", value: 0, min: -100, max: 100, precision: 1 }],
+      args0: [{ type: "field_number", name: "NUM", value: 0, min: 0, max: 100, precision: 1 }],
       output: "Number",
       colour: PORT_COLOUR,
     },
@@ -870,13 +908,26 @@ export function defineBlocks(): void {
     },
     {
       type: "oled_pong_cpu",
-      message0: "🏓 jogo do Pong contra a máquina (raquete na porta %1)",
-      args0: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
+      // DIFICULDADE veio depois: nos blocos antigos fica 3, a máquina de antes (extensão pong_dificuldade)
+      message0: "🏓 jogo do Pong contra a máquina",
+      message1: "raquete porta %1",
+      args1: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
+      message2: "dificuldade %1",
+      args2: [
+        {
+          type: "field_dropdown",
+          name: "DIFICULDADE",
+          options: [["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"]],
+        },
+      ],
+      inputsInline: false,
+      extensions: ["pong_dificuldade"],
       previousStatement: null,
       nextStatement: null,
       colour: GAME_COLOUR,
       tooltip:
         "Pong contra a máquina: a sua raquete (esquerda) segue o potenciômetro ligado nessa porta, ou as teclas ↑ ↓ (ou w s). " +
+        "Dificuldade de 1 (a máquina é lenta e erra bastante) a 5 (rápida e certeira). " +
         "Ganha quem fizer 5 pontos. A tecla x sai do jogo e o programa segue para o próximo bloco.",
     },
     {
@@ -1192,6 +1243,7 @@ export function defineBlocks(): void {
   };
 
   pythonGenerator.forBlock["led_color"] = (block) => {
+    if (block.getFieldValue("COLOR") === "ARCOIRIS") return "led_arco_iris()\n";
     const [r, g, b] = NAMED_COLORS[block.getFieldValue("COLOR")] ?? [0, 0, 0];
     return `led_rgb(${r}, ${g}, ${b})\n`;
   };
@@ -1238,13 +1290,15 @@ export function defineBlocks(): void {
     return `porta_pwm(${pin}, ${pct})\n`;
   };
 
+  // motor(m, velocidade 0..100, sentido): 1 = horário (força na 1ª porta), -1 = anti-horário
+  const sentido = (block: Blockly.Block) => (block.getFieldValue("DIR") === "CCW" ? -1 : 1);
   pythonGenerator.forBlock["motor_onoff"] = (block) =>
-    `motor(${block.getFieldValue("MOTOR")}, ${block.getFieldValue("STATE") === "ON" ? 100 : 0})\n`;
+    `motor(${block.getFieldValue("MOTOR")}, ${block.getFieldValue("STATE") === "ON" ? 100 : 0}, ${sentido(block)})\n`;
   pythonGenerator.forBlock["motor_slider"] = (block) =>
-    `motor(${block.getFieldValue("MOTOR")}, ${Number(block.getFieldValue("NUM")) || 0})\n`;
+    `motor(${block.getFieldValue("MOTOR")}, ${Number(block.getFieldValue("NUM")) || 0}, ${sentido(block)})\n`;
   pythonGenerator.forBlock["motor_run"] = (block, gen) => {
     const v = gen.valueToCode(block, "SPEED", Order.NONE) || "0";
-    return `motor(${block.getFieldValue("MOTOR")}, ${v})\n`;
+    return `motor(${block.getFieldValue("MOTOR")}, ${v}, ${sentido(block)})\n`;
   };
   pythonGenerator.forBlock["motor_pct"] = (block) => {
     const n = Number(block.getFieldValue("NUM")) || 0;
@@ -1312,7 +1366,10 @@ export function defineBlocks(): void {
   pythonGenerator.forBlock["oled_dino"] = (block) =>
     `_jogo_rodar(lambda: visor_dino(${porta(block, "PULAR")}, ${porta(block, "AGACHAR")}))\n`;
   pythonGenerator.forBlock["oled_flappy"] = (block) => `_jogo_rodar(lambda: visor_flappy(${porta(block, "VOAR")}))\n`;
-  pythonGenerator.forBlock["oled_pong_cpu"] = (block) => `_jogo_rodar(lambda: visor_pong(1, ${porta(block, "PIN")}, 0))\n`;
+  pythonGenerator.forBlock["oled_pong_cpu"] = (block) => {
+    const nivel = Math.min(5, Math.max(1, Number(block.getFieldValue("DIFICULDADE")) || 3));
+    return `_jogo_rodar(lambda: visor_pong(1, ${porta(block, "PIN")}, 0, ${nivel}))\n`;
+  };
   pythonGenerator.forBlock["oled_pong_2"] = (block) =>
     `_jogo_rodar(lambda: visor_pong(2, ${porta(block, "PIN")}, ${porta(block, "PIN2")}))\n`;
   pythonGenerator.forBlock["oled_tetris"] = () => "_jogo_rodar(visor_tetris)\n";
@@ -1420,6 +1477,12 @@ export function resetBoardCode(ledPin: number): string {
     `for _p in [${pins.join(", ")}]:`,
     "    try:",
     "        Pin(_p, Pin.IN)",
+    "    except Exception:",
+    "        pass",
+    "# portas do kit (modulos, motores, LED, buzzer) em 0 V, nao soltas (como no boot.py)",
+    "for _p in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13):",
+    "    try:",
+    "        Pin(_p, Pin.OUT, value=0)",
     "    except Exception:",
     "        pass",
     "",
@@ -1748,13 +1811,40 @@ export function preamble(pin: number): string {
     "_pwms = {}",
     "",
     "_LED_PORTAS = (8, 9, 10)  # vermelho, verde, azul",
+    "# balanco de branco: maximo de cada cor em % (o verde e o azul brilham mais que o vermelho;",
+    "# com 100/50/80 o branco sai branco). Os blocos continuam de 0 a 100% em cada cor",
+    "_LED_MAX = (100, 50, 80)",
     "",
-    "def led_rgb(r, g, b):",
-    "    for n, v in zip(_LED_PORTAS, (r, g, b)):",
+    "def _led_saida(r, g, b):",
+    "    for n, v, m in zip(_LED_PORTAS, (r, g, b), _LED_MAX):",
     "        v = max(0, min(255, int(v)))",
     "        if n not in _pwms:",
     "            _pwms[n] = PWM(Pin(n), freq=1000)",
-    "        _pwms[n].duty_u16(v * 65535 // 255)",
+    "        _pwms[n].duty_u16(v * 65535 * m // (255 * 100))",
+    "",
+    "# arco-iris: o timer do visor (a cada 35 ms) anda a cor; qualquer outro bloco de LED desliga",
+    "_led_arco = False",
+    "_led_matiz = 0",
+    "",
+    "def led_rgb(r, g, b):",
+    "    global _led_arco",
+    "    _led_arco = False",
+    "    _led_saida(r, g, b)",
+    "",
+    "def led_arco_iris():",
+    "    global _led_arco",
+    "    _led_arco = True",
+    "",
+    "def _led_arco_passo():",
+    "    global _led_matiz",
+    "    if not _led_arco:",
+    "        return",
+    "    _led_matiz = (_led_matiz + 4) % 360  # 90 passos de 35 ms: uma volta em ~3 s",
+    "    h = _led_matiz / 60",
+    "    i = int(h)",
+    "    t = int(255 * (h - i))",
+    "    q = 255 - t",
+    "    _led_saida(*((255, t, 0), (q, 255, 0), (0, 255, t), (0, q, 255), (t, 0, 255), (255, 0, q))[i])",
     "",
     "def led_pct(r, g, b):  # bloco 'acender LED' de 0 a 100%",
     "    led_rgb(r * 255 / 100, g * 255 / 100, b * 255 / 100)",
@@ -1790,10 +1880,11 @@ export function preamble(pin: number): string {
     "# em 0 V; negativo = o contrario; 0 = as duas em 0 V (motor parado)",
     "_MOTORES = {1: (4, 5), 2: (6, 7)}",
     "",
-    "def motor(m, pct):",
+    "# pct: velocidade de 0 a 100; sentido: 1 = horario (forca na 1a porta), -1 = anti-horario",
+    "def motor(m, pct, sentido=1):",
     "    a, b = _MOTORES.get(int(m), _MOTORES[1])",
     "    try:",
-    "        pct = max(-100, min(100, float(pct)))",
+    "        pct = max(0, min(100, float(pct))) * (-1 if sentido < 0 else 1)",
     "    except (TypeError, ValueError):",
     "        pct = 0",
     "    # PWM a 20 kHz: acima do que se ouve (a 1 kHz o motor chiava e o buzzer zumbia junto)",
@@ -2874,13 +2965,24 @@ function pongCode(): string {
     "    vy = s * 0.75 * t",
     "    return lado * (s * s - vy * vy) ** 0.5, vy",
     "",
-    "def visor_pong(modo, pino1, pino2):",
+    "# nivel (contra a maquina): 1 a 5. Muda a velocidade da raquete dela, o quanto erra a mira e",
+    "# a partir de onde ela vai atras da bola. O 3 e a maquina de antes",
+    "_PONG_NIVEIS = {",
+    "    1: (0.6, 16, 0.55),  # (velocidade x, erro maximo em px, comeca a seguir a partir de x% da tela)",
+    "    2: (0.8, 13, 0.45),",
+    "    3: (1.0, 10, 0.35),",
+    "    4: (1.25, 6, 0.25),",
+    "    5: (1.55, 3, 0.15),",
+    "}",
+    "",
+    "def visor_pong(modo, pino1, pino2, nivel=3):",
     "    global _pong_modo, _pong_sacar",
     "    _pong_modo = modo",
     "    _visor_garantir()",
     "    for n in ('up', 'down', 'w', 's', 'space'):",
     "        _teclas[n] = (lambda k: lambda: _pong_tecla(k))(n)",
     "    W, H = oled.width, oled.height",
+    "    IA_VEL, IA_ERRO, IA_ZONA = _PONG_NIVEIS.get(nivel, _PONG_NIVEIS[3])",
     "    PH, TOPO = 14, 8  # altura das raquetes; a quadra comeca em TOPO (o contorno fica 1 px acima)",
     "    X1, X2 = 2, W - 4  # raquete da esquerda e da direita (2 px de largura)",
     "    pinos = (pino1, pino2) if modo == 2 else (pino1,)",
@@ -2923,8 +3025,8 @@ function pongCode(): string {
     "                        _pong_mov[i] = 0",
     "                if modo == 1:",
     "                    # a maquina: vai atras da bola quando ela vem para o seu lado, com velocidade limitada",
-    "                    alvo = by + 1 - PH / 2 + erro if vx > 0 and bx > W * 0.35 else (TOPO + H - PH) / 2",
-    "                    passo = (20 + 4 * _jogo_velocidade) * dt  # 40 px/s na velocidade 5",
+    "                    alvo = by + 1 - PH / 2 + erro if vx > 0 and bx > W * IA_ZONA else (TOPO + H - PH) / 2",
+    "                    passo = (20 + 4 * _jogo_velocidade) * IA_VEL * dt  # 40 px/s na velocidade 5, nivel 3",
     "                    ys[1] += max(-passo, min(passo, alvo - ys[1]))",
     "                for i in (0, 1):",
     "                    ys[i] = max(TOPO, min(H - 1 - PH, ys[i]))  # dentro do contorno",
@@ -2941,7 +3043,7 @@ function pongCode(): string {
     "                        if vx < 0 and X1 - 1 <= bx <= X1 + 2 and ys[0] - 1 <= by + 1 <= ys[0] + PH + 1:",
     "                            vx, vy = _pong_rebate(vx, vy, by, ys[0], PH, 1, vmax)",
     "                            bx = X1 + 2.0",
-    "                            erro = random.uniform(-10, 10)",
+    "                            erro = random.uniform(-IA_ERRO, IA_ERRO)",
     "                        elif vx > 0 and X2 - 2 <= bx <= X2 + 1 and ys[1] - 1 <= by + 1 <= ys[1] + PH + 1:",
     "                            vx, vy = _pong_rebate(vx, vy, by, ys[1], PH, -1, vmax)",
     "                            bx = X2 - 2.0",
@@ -3736,14 +3838,23 @@ export function oledCode(): string {
     "# copia do ultimo quadro completo: o preview nunca pega a tela no meio de um redesenho",
     "_vis_quadro = None",
     "",
+    "_vis_tique = 0",
+    "",
+    "# pelo timer (a cada 35 ms): anda o arco-iris do LED e, a cada 3 vezes, manda a previa ao app",
     "def _visor_flush(t=None):",
-    "    global _vis_dirty",
+    "    global _vis_dirty, _vis_tique",
+    "    if t is not None:",
+    "        _led_arco_passo()",
+    "        _vis_tique += 1",
+    "        if _vis_tique < 3:",
+    "            return",
+    "        _vis_tique = 0",
     "    if _vis_dirty and _vis_quadro is not None:",
     "        _vis_dirty = False",
     "        print('\\x1f%d,%d,' % (oled.width, oled.height) + binascii.b2a_base64(_vis_quadro).decode().strip())",
     "",
     "_vis_timer = Timer(2)",
-    "_vis_timer.init(period=100, mode=Timer.PERIODIC, callback=_bb_protegido(_visor_flush))",
+    "_vis_timer.init(period=35, mode=Timer.PERIODIC, callback=_bb_protegido(_visor_flush))",
     "",
     "def _visor_mostrar():",
     "    global _vis_dirty, _vis_quadro, _vis_pixels",

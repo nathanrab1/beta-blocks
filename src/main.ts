@@ -132,7 +132,7 @@ workspace.registerToolboxCategoryCallback("VARIABLE", (ws) =>
   const menuPanel = $("menu-panel");
   const btnMenu = $<HTMLButtonElement>("btn-menu");
   const sidePanel = document.querySelector<HTMLElement>(".side-panel")!;
-  // no topo, nesta ordem: Bluetooth, ▶ e 📱 controle (só o ícone); o resto (■ Parar etc.) vai para o menu
+  // no topo, nesta ordem: Bluetooth, ▶ e 🎮 controle (só o ícone); o resto (■ Parar etc.) vai para o menu
   const TOPO = ["btn-connect-ble", "btn-upload", "link-controle"];
   const NO_TOPO = new Set(TOPO);
   const itens = [...toolbarEl.children] as HTMLElement[];
@@ -888,8 +888,14 @@ board.onDisconnect = (busy) => {
   refreshButtons();
 };
 // Bluetooth: a placa reinicia depois de cada envio e a ligação cai por uns segundos
-board.onReconnecting = () => setStatus("Bluetooth: reconectando à placa… (para desistir, clique em Desconectar)");
-board.onReconnected = () => setStatus(`Conectado por Bluetooth (${board.ble?.name})`, "ok");
+board.onReconnecting = () => {
+  setStatus("Bluetooth: reconectando à placa… (para desistir, clique em Desconectar)");
+  updatePadView();
+};
+board.onReconnected = () => {
+  setStatus(`Conectado por Bluetooth (${board.ble?.name})`, "ok");
+  updatePadView();
+};
 
 const serialSupported = "serial" in navigator;
 if (!serialSupported && !bleSupported) {
@@ -940,11 +946,19 @@ async function connect(port?: SerialPort) {
   await afterConnect();
 }
 
-async function connectBle() {
-  const device = await requestBleDevice();
+/**
+ * Última placa conectada por Bluetooth: enquanto a página está aberta, o Chrome deixa reconectar
+ * a ela sem mostrar a lista de aparelhos de novo (usado pelo controle no celular).
+ */
+let ultimaPlaca: BluetoothDevice | null = null;
+
+/** `alvo`: reconecta a essa placa sem a lista; sem ele, abre a lista do Chrome. */
+async function connectBle(alvo?: BluetoothDevice) {
+  const device = alvo ?? (await requestBleDevice());
   const nome = device.name ?? "placa";
   setStatus(`Conectando por Bluetooth a ${nome}…`);
   await board.connectBle(device, (msg) => setStatus(`Bluetooth ${nome}: ${msg}…`));
+  ultimaPlaca = device;
   consoleWrite(`\n[bluetooth] ${device.name}: escritas em pedaços de ${board.ble?.chunkSize} bytes\n`);
   void bleMonitorLoop();
   await afterConnect(` por Bluetooth (${device.name ?? "placa"})`);
@@ -1041,6 +1055,7 @@ if (serialSupported) {
 
 btnUpload.addEventListener("click", () =>
   run("Envio", async () => {
+    btnUpload.blur(); // o foco no ▶ faria o espaço (tecla de jogo) mandar o programa de novo
     const code = generateCode();
     setStatus("Enviando programa…");
     showTab("console");
@@ -1081,23 +1096,47 @@ const KEY_NAMES: Record<string, string> = {
 };
 const KNOWN_KEYS = new Set(KEY_OPTIONS.map(([, v]) => v));
 
-/** Teclas do computador -> placa (cabo ou Bluetooth), com o programa rodando. */
-document.addEventListener("keydown", (e) => {
-  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+/**
+ * Tecla que vai para a placa: "quando apertar a tecla" ou jogo, com o programa rodando e sem
+ * estar digitando num campo. null = a tecla segue o caminho normal da página.
+ */
+function teclaDoPrograma(e: KeyboardEvent): string | null {
+  if (e.ctrlKey || e.metaKey || e.altKey) return null;
   const target = e.target as HTMLElement | null;
-  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
-  if (Blockly.WidgetDiv.isVisible() || Blockly.DropDownDiv.isVisible()) return;
+  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return null;
+  if (Blockly.WidgetDiv.isVisible() || Blockly.DropDownDiv.isVisible()) return null;
   const name = KEY_NAMES[e.key] ?? e.key.toLowerCase();
-  if (!KNOWN_KEYS.has(name)) return;
-  // "quando apertar a tecla" e as teclas dos jogos
-  if (!eventKeys(workspace).has(name) && !gameKeys(workspace).has(name)) return;
-  if (!board.connected || monitorMode !== "program" || busy) return;
-  e.preventDefault();
+  if (!KNOWN_KEYS.has(name)) return null;
+  if (!eventKeys(workspace).has(name) && !gameKeys(workspace).has(name)) return null;
+  if (!board.connected || monitorMode !== "program" || busy) return null;
+  return name;
+}
+
+/**
+ * Teclas do computador -> placa (cabo ou Bluetooth), com o programa rodando. Na fase de captura
+ * (antes de todo o resto) e engolindo a tecla: senão o espaço "apertava" o botão com foco (ex.: o
+ * ▶ depois de enviar), as setas rolavam a página e o Blockly ficava com elas, e só funcionava
+ * depois de clicar em algum lugar.
+ */
+window.addEventListener(
+  "keydown",
+  (e) => {
+    const name = teclaDoPrograma(e);
+    if (!name) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.repeat) return; // segurando: a placa já sabe (teclas de segurar avisam ao soltar)
+    sendKeyFromKeyboard(e, name);
+  },
+  true,
+);
+
+function sendKeyFromKeyboard(e: KeyboardEvent, name: string) {
   const rotulo = e.key === " " ? "espaço" : e.key;
   void board.sendEvent(name).catch(() => {});
   if (gameHoldKeys(workspace).has(name)) heldKeys.add(name);
   setStatus(`Tecla "${rotulo}" enviada ${board.transport === "ble" ? "por Bluetooth" : "pelo cabo"}`, "ok");
-});
+}
 
 /** Teclas seguradas nos jogos: ao soltar, avisa a placa ("-left") para parar de andar. */
 const heldKeys = new Set<string>();
@@ -1107,12 +1146,24 @@ function releaseKey(name: string) {
   if (board.connected) void board.sendEvent(`-${name}`).catch(() => {});
 }
 
-document.addEventListener("keyup", (e) => releaseKey(KEY_NAMES[e.key] ?? e.key.toLowerCase()));
+window.addEventListener(
+  "keyup",
+  (e) => {
+    const name = KEY_NAMES[e.key] ?? e.key.toLowerCase();
+    // no espaço, o botão com foco é "apertado" ao soltar: engole também
+    if (teclaDoPrograma(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    releaseKey(name);
+  },
+  true,
+);
 // a janela perdeu o foco com a tecla apertada: o keyup nunca vem, então solta tudo
 window.addEventListener("blur", () => [...heldKeys].forEach(releaseKey));
 
 // ---------- controle dentro do app (celular) ----------
-// "📱 Controle" no celular abre os botões por cima dos blocos, usando a mesma conexão: não precisa
+// "🎮 Controle" no celular abre os botões por cima dos blocos, usando a mesma conexão: não precisa
 // conectar de novo (a página controle.html abriria outra ligação, e o Chrome pede a placa de novo).
 // As teclas vêm dos blocos, como as do teclado do computador.
 const padView = $("pad-view");
@@ -1152,20 +1203,39 @@ function updatePadView() {
   );
 }
 
+/** Controle: a ligação caiu (ex.: a placa reiniciou depois do ▶) — volta para a última placa, sem a lista. */
+function reconectarControle() {
+  const placa = ultimaPlaca;
+  if (!placa || board.connected || busy) return false;
+  setPadStatus(`Reconectando a ${placa.name ?? "placa"}…`);
+  btnPadConnect.hidden = true;
+  void run("Bluetooth", async () => {
+    try {
+      await connectBle(placa);
+    } catch (err) {
+      ultimaPlaca = null; // não deu: o próximo "Conectar" abre a lista do Chrome
+      throw err;
+    }
+  });
+  return true;
+}
+
 function openPadView(open: boolean) {
   if (open === !padView.hidden) return;
   padView.hidden = !open;
   if (open) {
     history.pushState({ controle: true }, ""); // o "voltar" do Android fecha o controle, não o app
     updatePadView();
+    reconectarControle();
   } else if (history.state?.controle) {
     history.back();
   }
 }
 
+// celular e computador: os botões por cima dos blocos, com a mesma conexão do app
 $("link-controle").addEventListener("click", (e) => {
-  if (!toque.matches && !compacto.matches) return; // computador: abre a página para o celular
   e.preventDefault();
+  $("pad-outro").hidden = toque.matches; // no computador: dica do teclado e da página para outro celular
   openPadView(true);
 });
 $("btn-pad-close").addEventListener("click", () => openPadView(false));
@@ -1174,7 +1244,10 @@ window.addEventListener("popstate", () => {
     padView.hidden = true;
   }
 });
-btnPadConnect.addEventListener("click", () => btnConnectBle.click());
+// "Conectar" no controle: primeiro a última placa (sem a lista); se não houver, a lista do Chrome
+btnPadConnect.addEventListener("click", () => {
+  if (!reconectarControle()) btnConnectBle.click();
+});
 
 // ---------- gravação do MicroPython ----------
 // Em duas etapas porque requestPort() só funciona direto num clique do usuário:

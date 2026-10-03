@@ -196,6 +196,10 @@ a.btn { display: inline-block; text-decoration: none; font-family: inherit; }
 .gp-keys button { background: var(--ok); font-size: 22px; font-weight: 600; padding: 20px 8px; border-radius: 14px; }
 .gp-keys button:active, .gp-keys button.on { background: #1e8449; }
 .gp-keys button.wide { grid-column: 1 / -1; }
+/* computador: o conteúdo do controle numa coluna no meio da tela */
+.pad-view > * { max-width: 480px; margin-left: auto; margin-right: auto; }
+.pad-outro { margin-top: 20px; }
+.pad-outro a { color: var(--accent); }
 
 /* ---------- celular (tela estreita) ---------- */
 .menu-btn, .panel-toggle { display: none; }

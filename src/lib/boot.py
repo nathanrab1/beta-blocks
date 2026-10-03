@@ -9,6 +9,22 @@ import time
 import machine
 import micropython
 
+# Portas do kit (modulos 1-3, motores 4-7, LED 8-10, buzzer 13) em 0 V ao ligar, a cada reinicio
+# e ao parar: nao ficam com o estado do programa anterior nem soltas (flutuando). Depois o
+# programa transforma cada uma em entrada ou saida. O visor (11 e 12) fica de fora.
+_PORTAS_KIT = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13)
+
+
+def _zerar_portas():
+    for p in _PORTAS_KIT:
+        try:
+            machine.Pin(p, machine.Pin.OUT, value=0)
+        except Exception:
+            pass
+
+
+_zerar_portas()
+
 
 def _limpar():
     """Ao parar e antes de reiniciar com um programa novo: apaga o visor, o LED e as portas.
@@ -133,6 +149,7 @@ def _ble_parar():
             machine.Pin(p, machine.Pin.IN)
         except Exception:
             pass
+    _zerar_portas()  # as do kit: 0 V, nao soltas
     c = _BleCtrlC()
     c.n = 1
     try:

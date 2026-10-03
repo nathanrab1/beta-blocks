@@ -58,7 +58,7 @@
         <button id="btn-upload" class="btn btn-primary" aria-label="Enviar" disabled>▶<span class="btn-label"> Enviar</span></button>
         <button id="btn-stop" class="btn" aria-label="Parar" disabled>■<span class="btn-label"> Parar</span></button>
         <button id="btn-flash" class="btn btn-ghost" disabled>Gravar MicroPython</button>
-        <a id="link-controle" class="btn btn-ghost" href="./controle.html" target="_blank" title="Abra este endereço no celular para controlar a placa por Bluetooth" aria-label="Controle no celular">📱<span class="btn-label"> Controle no celular</span></a>
+        <a id="link-controle" class="btn btn-ghost" href="./controle.html" target="_blank" title="Botões do controle (setas e teclas do programa), usando a conexão do app" aria-label="Controle">🎮<span class="btn-label"> Controle</span></a>
         <button id="btn-install" class="btn btn-ghost" title="Instala o Beta Blocks com ícone na tela inicial">📲 Instalar app</button>
       </div>
     </header>
@@ -152,6 +152,11 @@
       <div id="pad-keys" class="gp-keys" hidden></div>
       <p id="pad-no-keys" class="pad-status" hidden>
         O programa não usa teclas. Use o bloco “quando apertar a tecla” (ou um jogo) e envie o programa de novo.
+      </p>
+      <!-- computador: para controlar de outro celular (com outra conexão) -->
+      <p id="pad-outro" class="pad-status pad-outro" hidden>
+        No teclado, as setas e o espaço também funcionam. Para controlar de outro celular, abra
+        <a href="./controle.html" target="_blank">a página do controle</a> nele.
       </p>
     </div>
 
