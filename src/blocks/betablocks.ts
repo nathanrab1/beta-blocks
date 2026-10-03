@@ -19,6 +19,7 @@ const PALETA = {
   rosa: "#b5527f",
   turquesa: "#3a8f8a",
   caramelo: "#a47148",
+  cinzaEscuro: "#5b5e66",
 };
 const EVENT_COLOUR = PALETA.verde; // "ao iniciar" e eventos
 const LED_COLOUR = PALETA.vermelho;
@@ -27,7 +28,7 @@ const CONTROL_COLOUR = PALETA.amarelo;
 const PORT_COLOUR = PALETA.vermelho; // portas e LED juntos na categoria Outputs
 const INPUT_COLOUR = PALETA.marinho;
 const OLED_COLOUR = PALETA.laranja;
-const GAME_COLOUR = PALETA.preto;
+const GAME_COLOUR = PALETA.cinzaEscuro;
 const TEXT_COLOUR = PALETA.cinza;
 const MATH_COLOUR = PALETA.roxo; // dentro da Lógica, na mesma cor
 const LOGIC_COLOUR = PALETA.roxo;
