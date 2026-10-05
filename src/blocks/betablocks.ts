@@ -69,6 +69,24 @@ const SETA_ANTI = setaSvg('<polyline points="2 4 2 10 8 10"/><path d="M4.4 15a8.
 const setaField = { type: "field_image", name: "DIR_ICON", src: SETA_HORARIO, width: 22, height: 22, alt: "" };
 const motorField = { type: "field_dropdown", name: "MOTOR", options: [["M1", "1"], ["M2", "2"]] };
 
+/**
+ * Jogos: como o jogador controla. "Bluetooth / teclado" não lê nenhuma porta — uma porta sem nada
+ * ligado (ou com o módulo solto) dá leituras aleatórias que mexiam a raquete/nave sozinhas e
+ * brigavam com as teclas. Nesse modo as linhas de porta somem do bloco.
+ */
+const CONTROLE_OPCOES: [string, string][] = [
+  ["🎛 botões e potenciômetros", "FISICO"],
+  ["🎮 Bluetooth / teclado", "TECLADO"],
+];
+const controleField = { type: "field_dropdown", name: "CONTROLE", options: CONTROLE_OPCOES };
+/** Campos de porta dos jogos (somem no modo Bluetooth / teclado). */
+const CAMPOS_PORTA_JOGO = ["PIN", "PIN2", "PULAR", "AGACHAR", "VOAR", "ATIRAR"];
+const JOGOS_COM_PORTA = ["oled_dino", "oled_flappy", "oled_breakout", "oled_pong_cpu", "oled_pong_2", "oled_invasores"];
+/** O jogo está no modo "Bluetooth / teclado" (não lê portas)? */
+function jogoPorTeclado(b: Blockly.Block): boolean {
+  return JOGOS_COM_PORTA.includes(b.type) && b.getFieldValue("CONTROLE") === "TECLADO";
+}
+
 /** Portas dos módulos do kit (buzzer, raquete do Pong): escolhidas num menu. */
 const PORTAS_1A3: [string, string][] = [["1", "1"], ["2", "2"], ["3", "3"]];
 const NOTE_OPTIONS: [string, string][] = [
@@ -400,6 +418,23 @@ export function defineBlocks(): void {
   if (!Blockly.Extensions.isRegistered("pong_dificuldade")) {
     Blockly.Extensions.register("pong_dificuldade", function (this: Blockly.Block) {
       this.setFieldValue("3", "DIFICULDADE");
+    });
+  }
+  // jogos: no modo "Bluetooth / teclado" as linhas de porta somem (o jogo não lê portas)
+  if (!Blockly.Extensions.isRegistered("jogo_controle")) {
+    Blockly.Extensions.register("jogo_controle", function (this: Blockly.Block) {
+      const mostrar = (v: unknown) => {
+        const fisico = v !== "TECLADO";
+        for (const input of this.inputList) {
+          if (input.fieldRow.some((f) => CAMPOS_PORTA_JOGO.includes(f.name ?? ""))) input.setVisible(fisico);
+        }
+        if (this.rendered) (this as Blockly.BlockSvg).queueRender();
+      };
+      this.getField("CONTROLE")!.setValidator((v: unknown) => {
+        mostrar(v);
+        return undefined;
+      });
+      mostrar(this.getFieldValue("CONTROLE"));
     });
   }
   // invasores: atirar começa na porta 2 (a nave fica na 1)
@@ -897,26 +932,32 @@ export function defineBlocks(): void {
       type: "oled_flappy",
       // VOAR veio depois: nos blocos antigos fica na porta 1
       message0: "🐤 jogo do passarinho (flappy)",
-      message1: "voar porta %1",
-      args1: [{ type: "field_dropdown", name: "VOAR", options: PORTAS_1A3 }],
+      message1: "controle %1",
+      args1: [controleField],
+      message2: "voar porta %1",
+      args2: [{ type: "field_dropdown", name: "VOAR", options: PORTAS_1A3 }],
       inputsInline: false,
+      extensions: ["jogo_controle"],
       previousStatement: null,
       nextStatement: null,
       colour: GAME_COLOUR,
       tooltip:
         "Flappy Bird no visor: cada aperto no botão (entre a porta e o 3,3 V) bate as asas para passar entre os " +
-        "canos. Também pelas teclas ↑ ou espaço. A tecla x sai do jogo e o programa segue para o próximo bloco.",
+        "canos; segurando, ele continua batendo (sobe enquanto segura). Também pelas teclas ↑ ou espaço. " +
+        "A tecla x sai do jogo e o programa segue para o próximo bloco.",
     },
     {
       type: "oled_dino",
       // AGACHAR/PULAR vieram depois: nos blocos antigos ficam agachar 1 e pular 2 (extensão dino_portas)
       message0: "🦖 jogo do dinossauro",
-      message1: "agachar porta %1",
-      args1: [{ type: "field_dropdown", name: "AGACHAR", options: PORTAS_1A3 }],
-      message2: "pular porta %1",
-      args2: [{ type: "field_dropdown", name: "PULAR", options: PORTAS_1A3 }],
+      message1: "controle %1",
+      args1: [controleField],
+      message2: "agachar porta %1",
+      args2: [{ type: "field_dropdown", name: "AGACHAR", options: PORTAS_1A3 }],
+      message3: "pular porta %1",
+      args3: [{ type: "field_dropdown", name: "PULAR", options: PORTAS_1A3 }],
       inputsInline: false,
-      extensions: ["dino_portas"],
+      extensions: ["dino_portas", "jogo_controle"],
       previousStatement: null,
       nextStatement: null,
       colour: GAME_COLOUR,
@@ -927,8 +968,13 @@ export function defineBlocks(): void {
     },
     {
       type: "oled_breakout",
-      message0: "🧱 jogo do Breakout (raquete na porta %1)",
-      args0: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
+      message0: "🧱 jogo do Breakout",
+      message1: "controle %1",
+      args1: [controleField],
+      message2: "raquete porta %1",
+      args2: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
+      inputsInline: false,
+      extensions: ["jogo_controle"],
       previousStatement: null,
       nextStatement: null,
       colour: GAME_COLOUR,
@@ -941,10 +987,12 @@ export function defineBlocks(): void {
       type: "oled_pong_cpu",
       // DIFICULDADE veio depois: nos blocos antigos fica 3, a máquina de antes (extensão pong_dificuldade)
       message0: "🏓 jogo do Pong contra a máquina",
-      message1: "raquete porta %1",
-      args1: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
-      message2: "dificuldade %1",
-      args2: [
+      message1: "controle %1",
+      args1: [controleField],
+      message2: "raquete porta %1",
+      args2: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
+      message3: "dificuldade %1",
+      args3: [
         {
           type: "field_dropdown",
           name: "DIFICULDADE",
@@ -952,7 +1000,7 @@ export function defineBlocks(): void {
         },
       ],
       inputsInline: false,
-      extensions: ["pong_dificuldade"],
+      extensions: ["pong_dificuldade", "jogo_controle"],
       previousStatement: null,
       nextStatement: null,
       colour: GAME_COLOUR,
@@ -963,11 +1011,15 @@ export function defineBlocks(): void {
     },
     {
       type: "oled_pong_2",
-      message0: "🏓 jogo do Pong para dois (raquetes nas portas %1 e %2)",
-      args0: [
-        { type: "field_dropdown", name: "PIN", options: PORTAS_1A3 },
-        { type: "field_dropdown", name: "PIN2", options: PORTAS_1A3 },
-      ],
+      message0: "🏓 jogo do Pong para dois",
+      message1: "controle %1",
+      args1: [controleField],
+      message2: "raquete 1 porta %1",
+      args2: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
+      message3: "raquete 2 porta %1",
+      args3: [{ type: "field_dropdown", name: "PIN2", options: PORTAS_1A3 }],
+      inputsInline: false,
+      extensions: ["jogo_controle"],
       previousStatement: null,
       nextStatement: null,
       colour: GAME_COLOUR,
@@ -991,12 +1043,14 @@ export function defineBlocks(): void {
       type: "oled_invasores",
       // ATIRAR veio depois: nos blocos antigos fica na porta 2 (extensão invasores_portas)
       message0: "👾 jogo dos Invasores",
-      message1: "nave porta %1",
-      args1: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
-      message2: "atirar porta %1",
-      args2: [{ type: "field_dropdown", name: "ATIRAR", options: PORTAS_1A3 }],
+      message1: "controle %1",
+      args1: [controleField],
+      message2: "nave porta %1",
+      args2: [{ type: "field_dropdown", name: "PIN", options: PORTAS_1A3 }],
+      message3: "atirar porta %1",
+      args3: [{ type: "field_dropdown", name: "ATIRAR", options: PORTAS_1A3 }],
       inputsInline: false,
-      extensions: ["invasores_portas"],
+      extensions: ["invasores_portas", "jogo_controle"],
       previousStatement: null,
       nextStatement: null,
       colour: GAME_COLOUR,
@@ -1395,20 +1449,40 @@ export function defineBlocks(): void {
   pythonGenerator.forBlock["oled_pen_up"] = () => "visor_levantar_caneta()\n";
   pythonGenerator.forBlock["oled_snake"] = () => "_jogo_rodar(visor_cobrinha)\n";
   const porta = (block: Blockly.Block, campo: string) => Math.round(Number(block.getFieldValue(campo)) || 1);
-  pythonGenerator.forBlock["oled_dino"] = (block) =>
-    `_jogo_rodar(lambda: visor_dino(${porta(block, "PULAR")}, ${porta(block, "AGACHAR")}))\n`;
-  pythonGenerator.forBlock["oled_flappy"] = (block) => `_jogo_rodar(lambda: visor_flappy(${porta(block, "VOAR")}))\n`;
+  // porta do jogo, ou None no modo "Bluetooth / teclado" (o jogo não lê a porta)
+  const pinoJogo = (block: Blockly.Block, campo: string) => (jogoPorTeclado(block) ? null : porta(block, campo));
+  const py = (p: number | null) => (p === null ? "None" : String(p));
+  // tupla Python com as portas que o jogo usa: (1,) ou (1, 2); () no modo teclado
+  const portas = (...todas: (number | null)[]) => {
+    const ps = todas.filter((p): p is number => p !== null);
+    return `(${ps.join(", ")}${ps.length === 1 ? "," : ""})`;
+  };
+  pythonGenerator.forBlock["oled_dino"] = (block) => {
+    const [pular, agachar] = [pinoJogo(block, "PULAR"), pinoJogo(block, "AGACHAR")];
+    return `_jogo_rodar(lambda: visor_dino(${py(pular)}, ${py(agachar)}), ${portas(pular, agachar)})\n`;
+  };
+  pythonGenerator.forBlock["oled_flappy"] = (block) => {
+    const voar = pinoJogo(block, "VOAR");
+    return `_jogo_rodar(lambda: visor_flappy(${py(voar)}), ${portas(voar)})\n`;
+  };
   pythonGenerator.forBlock["oled_pong_cpu"] = (block) => {
     const nivel = Math.min(5, Math.max(1, Number(block.getFieldValue("DIFICULDADE")) || 3));
-    return `_jogo_rodar(lambda: visor_pong(1, ${porta(block, "PIN")}, 0, ${nivel}))\n`;
+    const pin = pinoJogo(block, "PIN");
+    return `_jogo_rodar(lambda: visor_pong(1, ${py(pin)}, None, ${nivel}), ${portas(pin)})\n`;
   };
-  pythonGenerator.forBlock["oled_pong_2"] = (block) =>
-    `_jogo_rodar(lambda: visor_pong(2, ${porta(block, "PIN")}, ${porta(block, "PIN2")}))\n`;
+  pythonGenerator.forBlock["oled_pong_2"] = (block) => {
+    const [a, b] = [pinoJogo(block, "PIN"), pinoJogo(block, "PIN2")];
+    return `_jogo_rodar(lambda: visor_pong(2, ${py(a)}, ${py(b)}), ${portas(a, b)})\n`;
+  };
   pythonGenerator.forBlock["oled_tetris"] = () => "_jogo_rodar(visor_tetris)\n";
-  pythonGenerator.forBlock["oled_invasores"] = (block) =>
-    `_jogo_rodar(lambda: visor_invasores(${porta(block, "PIN")}, ${porta(block, "ATIRAR")}))\n`;
-  pythonGenerator.forBlock["oled_breakout"] = (block) =>
-    `_jogo_rodar(lambda: visor_breakout(${Math.round(Number(block.getFieldValue("PIN")) || 1)}))\n`;
+  pythonGenerator.forBlock["oled_invasores"] = (block) => {
+    const [pin, tiro] = [pinoJogo(block, "PIN"), pinoJogo(block, "ATIRAR")];
+    return `_jogo_rodar(lambda: visor_invasores(${py(pin)}, ${py(tiro)}), ${portas(pin, tiro)})\n`;
+  };
+  pythonGenerator.forBlock["oled_breakout"] = (block) => {
+    const pin = pinoJogo(block, "PIN");
+    return `_jogo_rodar(lambda: visor_breakout(${py(pin)}), ${portas(pin)})\n`;
+  };
   pythonGenerator.forBlock["game_speed"] = (block) => {
     const v = Math.min(10, Math.max(1, Number(block.getFieldValue("SPEED")) || 5));
     return `_jogo_velocidade = ${v}\n`;
@@ -1997,6 +2071,7 @@ const CAMPOS_PORTA = ["PIN", "PIN2", "PULAR", "AGACHAR", "VOAR", "ATIRAR"];
 function portasUsadas(workspace: Blockly.Workspace): Set<number> {
   const usadas = new Set<number>();
   for (const b of programBlocks(workspace)) {
+    if (jogoPorTeclado(b)) continue; // jogo no modo Bluetooth / teclado: as portas ficam em 0 V
     for (const campo of CAMPOS_PORTA) {
       if (b.getField(campo)) usadas.add(Number(b.getFieldValue(campo)));
     }
@@ -2118,6 +2193,7 @@ function inputsRuntimeCode(): string {
     "_botoes = []  # (porta, evento)",
     "_botoes_antes = {}  # porta -> estava apertado na ultima leitura",
     "_limites = []  # [porta, limite, evento, armado]",
+    "_jogo_portas = ()  # portas do jogo rodando (os jogos mudam): ficam de fora aqui",
     "",
     "def _limite_novo(n, limite, evento):",
     "    _limites.append([n, limite, evento, porta_analogica(n) <= limite])",
@@ -2125,10 +2201,12 @@ function inputsRuntimeCode(): string {
     "def _ler_entradas():",
     "    for n, evento in _botoes:",
     "        agora = porta_ler(n)",
-    "        if agora and not _botoes_antes.get(n, True):",
+    "        if agora and not _botoes_antes.get(n, True) and n not in _jogo_portas:",
     "            evento()",
     "        _botoes_antes[n] = agora",
     "    for l in _limites:",
+    "        if l[0] in _jogo_portas:",
+    "            continue",
     "        v = porta_analogica(l[0])",
     "        if l[3] and v > l[1]:",
     "            l[3] = False",
@@ -2523,13 +2601,14 @@ export function collectInputPins(workspace: Blockly.Workspace): InputPins {
     if (block.isInsertionMarker()) continue;
     const pin = Number(block.getFieldValue("PIN"));
     if (!Number.isFinite(pin)) continue;
+    if (jogoPorTeclado(block)) continue; // jogo no modo Bluetooth / teclado: não lê portas
     if (["input_analog", "event_threshold", "oled_breakout", "oled_pong_cpu", "oled_pong_2", "oled_invasores"].includes(block.type)) analog.add(pin);
     else if (["input_digital", "input_if", "input_ifelse", "event_button"].includes(block.type)) digital.add(pin);
     else if (block.type === "input_dht") dht.add(pin);
   }
   // o Pong para dois tem a segunda raquete em outra porta; o dinossauro, dois botões
   for (const block of programBlocks(workspace)) {
-    if (block.isInsertionMarker()) continue;
+    if (block.isInsertionMarker() || jogoPorTeclado(block)) continue;
     if (block.type === "oled_pong_2") analog.add(Number(block.getFieldValue("PIN2")));
     if (block.type === "oled_flappy") digital.add(Number(block.getFieldValue("VOAR")));
     if (block.type === "oled_invasores") digital.add(Number(block.getFieldValue("ATIRAR")));
@@ -2608,6 +2687,7 @@ const GAMES: Record<string, string[]> = {
 const HOLD_KEYS: Record<string, string[]> = {
   oled_breakout: ["left", "right"],
   oled_invasores: ["left", "right", "space"],
+  oled_flappy: ["up", "space"],
 };
 
 export function gameHoldKeys(workspace: Blockly.Workspace): Set<string> {
@@ -2650,6 +2730,15 @@ function gamesCommonCode(): string {
     "_jogo_tecla = False  # alguma tecla do jogo foi apertada?",
     "_jogo_velocidade = 5  # 1..10, mudado pelo bloco 'velocidade do jogo'",
     "_jogo_sair = False  # a tecla x foi apertada: o jogo acaba na proxima pausa",
+    "_jogo_portas = ()  # portas do jogo rodando: nao disparam 'quando clicar botao' nem 'passar de'",
+    "",
+    "# leituras dos jogos: porta None = modo 'Bluetooth / teclado' (nao le nada: botao solto e",
+    "# potenciometro parado, entao so as teclas mexem)",
+    "def _jogo_ler(p):",
+    "    return p is not None and porta_ler(p)",
+    "",
+    "def _jogo_pot(p):",
+    "    return -1 if p is None else porta_analogica(p)",
     "",
     "class _JogoSair(BaseException):",
     "    pass",
@@ -2676,11 +2765,14 @@ function gamesCommonCode(): string {
     "    _jogo_prox = time.ticks_add(_jogo_prox, ms)",
     "    _jogo_pausa(max(0, time.ticks_diff(_jogo_prox, agora)))",
     "",
-    "# o jogo troca as teclas dele em _teclas; ao sair (ou ser interrompido) devolve as do programa",
-    "def _jogo_rodar(jogo):",
-    "    global _jogo_sair",
+    "# o jogo troca as teclas dele em _teclas; ao sair (ou ser interrompido) devolve as do programa.",
+    "# As portas do jogo ficam so com ele: o botao de voar/pular nao dispara de novo o",
+    "# 'quando clicar botao' que comecou o jogo (o que reiniciaria o jogo a cada aperto).",
+    "def _jogo_rodar(jogo, portas=()):",
+    "    global _jogo_sair, _jogo_portas",
     "    antes = dict(_teclas)",
     "    _jogo_sair = False",
+    "    _jogo_portas = portas",
     "    _teclas['x'] = _jogo_tecla_sair",
     "    try:",
     "        jogo()",
@@ -2691,6 +2783,7 @@ function gamesCommonCode(): string {
     "        led_rgb(0, 0, 0)",
     "    finally:",
     "        _jogo_sair = False",
+    "        _jogo_portas = ()",
     "        _teclas.clear()",
     "        _teclas.update(antes)",
     "",
@@ -2896,7 +2989,7 @@ function dinoCode(): string {
     "def visor_dino(pino_pular, pino_agachar):",
     "    global _dino_pulo, _dino_agachar",
     "    _visor_garantir()",
-    "    botao = lambda: porta_ler(pino_pular) or porta_ler(pino_agachar)",
+    "    botao = lambda: _jogo_ler(pino_pular) or _jogo_ler(pino_agachar)",
     "    for n in ('up', 'space', 'down'):",
     "        _teclas[n] = (lambda k: lambda: _dino_tecla(k))(n)",
     "    W = oled.width",
@@ -2933,9 +3026,9 @@ function dinoCode(): string {
     "            agora = time.ticks_ms()",
     "            k = min(2.0, time.ticks_diff(agora, antes) / 50)",
     "            antes = agora",
-    "            if porta_ler(pino_pular):",
+    "            if _jogo_ler(pino_pular):",
     "                _dino_pulo = True",
-    "            if porta_ler(pino_agachar):",
+    "            if _jogo_ler(pino_agachar):",
     "                _dino_agachar = max(_dino_agachar, 2)",
     "            if _dino_pulo:",
     "                _dino_pulo = False",
@@ -3056,16 +3149,16 @@ function pongCode(): string {
     "    PH, TOPO = 14, 8  # altura das raquetes; a quadra comeca em TOPO (o contorno fica 1 px acima)",
     "    X1, X2 = 2, W - 4  # raquete da esquerda e da direita (2 px de largura)",
     "    pinos = (pino1, pino2) if modo == 2 else (pino1,)",
-    "    base = [porta_analogica(p) for p in pinos]",
+    "    base = [_jogo_pot(p) for p in pinos]",
     "    def mexeu():  # girar um potenciometro tambem comeca o jogo",
-    "        return any(abs(porta_analogica(p) - b) > 10 for p, b in zip(pinos, base))",
+    "        return any(abs(_jogo_pot(p) - b) > 10 for p, b in zip(pinos, base))",
     "    def altura(v):  # potenciometro 0..100 -> raquete (girar para 100 sobe)",
     "        return TOPO + (100 - v) * (H - 1 - TOPO - PH) / 100",
     "    _jogo_esperar('PONG', 'x sai do jogo', 'gire ou aperte', mexeu)",
     "    while _bb_rodando:",
     "        placar = [0, 0]",
     "        ys = [(TOPO + H - PH) / 2] * 2",
-    "        pots = [porta_analogica(p) for p in pinos]",
+    "        pots = [_jogo_pot(p) for p in pinos]",
     "        saque = random.choice((-1, 1))",
     "        led_ate = 0",
     "        while max(placar) < 5 and _bb_rodando:",
@@ -3085,7 +3178,7 @@ function pongCode(): string {
     "                antes = agora",
     "                # raquetes: o potenciometro manda quando gira; as teclas empurram 6 px",
     "                for i, p in enumerate(pinos):",
-    "                    v = porta_analogica(p)",
+    "                    v = _jogo_pot(p)",
     "                    if v != pots[i]:",
     "                        pots[i] = v",
     "                        ys[i] = altura(v)",
@@ -3152,7 +3245,7 @@ function pongCode(): string {
     "            quem = 'VOCE VENCEU!' if placar[0] > placar[1] else 'A MAQUINA VENCEU'",
     "        else:",
     "            quem = 'JOGADOR %d VENCEU' % (1 if placar[0] > placar[1] else 2)",
-    "        base[:] = [porta_analogica(p) for p in pinos]",
+    "        base[:] = [_jogo_pot(p) for p in pinos]",
     "        _jogo_esperar(quem, '%d x %d' % (placar[0], placar[1]), 'gire ou aperte', mexeu)",
     "        led_rgb(0, 0, 0)",
     "",
@@ -3208,15 +3301,15 @@ function breakoutCode(): string {
     "    COLS, LINS, BW, BH = 10, 4, 11, 4  # tijolos",
     "    BX0 = (W - (COLS * (BW + 1) - 1)) // 2",
     "    BY0 = 9",
-    "    base = [porta_analogica(pino)]",
+    "    base = [_jogo_pot(pino)]",
     "    def mexeu():  # girar o potenciometro tambem comeca o jogo",
-    "        return abs(porta_analogica(pino) - base[0]) > 10",
+    "        return abs(_jogo_pot(pino) - base[0]) > 10",
     "    _jogo_esperar('BREAKOUT', 'x sai do jogo', 'gire ou aperte', mexeu, extra='recorde %d' % _jogo_recorde('breakout'))",
     "    while _bb_rodando:",
     "        pontos, vidas, fase = 0, 3, 1",
     "        tijolos = _brk_tijolos(fase)",
     "        px = (W - PW) / 2",
-    "        pot = porta_analogica(pino)",
+    "        pot = _jogo_pot(pino)",
     "        led_ate = 0",
     "        while vidas > 0 and _bb_rodando:",
     "            # pixels por SEGUNDO (pelo relogio): a mesma velocidade seja qual for o tempo de cada quadro",
@@ -3234,7 +3327,7 @@ function breakoutCode(): string {
     "                antes = agora",
     "                # raquete: o potenciometro manda quando gira; cada toque na seta empurra 8 px",
     "                # e, segurando, ela corre a 130 px por segundo",
-    "                v = porta_analogica(pino)",
+    "                v = _jogo_pot(pino)",
     "                if v != pot:",
     "                    pot = v",
     "                    px = 1 + v * (W - 2 - PW) / 100",
@@ -3312,7 +3405,7 @@ function breakoutCode(): string {
     "                _jogo_pausa(400)",
     "                led_rgb(0, 0, 0)",
     "        led_rgb(40, 0, 0)",
-    "        base[0] = porta_analogica(pino)",
+    "        base[0] = _jogo_pot(pino)",
     "        _jogo_esperar('FIM DE JOGO', '%d pontos' % pontos, 'gire ou aperte', mexeu, extra=_jogo_fim_recorde('breakout', pontos))",
     "        led_rgb(0, 0, 0)",
     "",
@@ -3375,9 +3468,9 @@ function invasoresCode(): string {
     "    NY = H - 2 - NH  # altura da nave",
     "    EY = NY - 11  # altura dos escudos",
     "    EX = [W * i // 4 - 6 for i in (1, 2, 3)]",
-    "    base = [porta_analogica(pino)]",
+    "    base = [_jogo_pot(pino)]",
     "    def mexeu():  # girar o potenciometro ou apertar o botao tambem comeca o jogo",
-    "        return abs(porta_analogica(pino) - base[0]) > 10 or porta_ler(pino_tiro)",
+    "        return abs(_jogo_pot(pino) - base[0]) > 10 or _jogo_ler(pino_tiro)",
     "    def no_escudo(x, y):  # o tiro bateu num bloco de escudo? apaga o bloco",
     "        for b, ex in enumerate(EX):",
     "            i, j = int((x - ex) // 2), int((y - EY) // 2)",
@@ -3389,7 +3482,7 @@ function invasoresCode(): string {
     "    while _bb_rodando:",
     "        pontos, vidas, fase = 0, 3, 1",
     "        px = (W - NW) / 2",
-    "        pot = porta_analogica(pino)",
+    "        pot = _jogo_pot(pino)",
     "        fim = None",
     "        while vidas > 0 and _bb_rodando:",
     "            if fim != 'acertado':  # fase nova: tropa cheia no alto e escudos inteiros",
@@ -3410,7 +3503,7 @@ function invasoresCode(): string {
     "                antes = agora",
     "                total = sum(vivos)",
     "                # nave: o potenciometro manda quando gira; cada toque na seta anda 4 px e, segurando, ela corre",
-    "                v = porta_analogica(pino)",
+    "                v = _jogo_pot(pino)",
     "                if v != pot:",
     "                    pot = v",
     "                    px = 1 + v * (W - 2 - NW) / 100",
@@ -3420,7 +3513,7 @@ function invasoresCode(): string {
     "                elif _inv_seg:",
     "                    px += _inv_seg * 90 * dt",
     "                px = max(1, min(W - 1 - NW, px))",
-    "                if tiro is None and (_inv_tiro or _inv_seg_tiro or porta_ler(pino_tiro)):",
+    "                if tiro is None and (_inv_tiro or _inv_seg_tiro or _jogo_ler(pino_tiro)):",
     "                    tiro = [int(px) + NW // 2, NY - 3.0]",
     "                _inv_tiro = False",
     "                # a tropa anda 2 px por passo; quanto menos aliens, mais rapido (e cada fase mais rapido)",
@@ -3528,7 +3621,7 @@ function invasoresCode(): string {
     "            elif fim == 'invadiu':  # os aliens chegaram na nave: acabou",
     "                vidas = 0",
     "        led_rgb(40, 0, 0)",
-    "        base[0] = porta_analogica(pino)",
+    "        base[0] = _jogo_pot(pino)",
     "        _jogo_esperar('FIM DE JOGO', '%d pontos' % pontos, 'gire ou aperte', mexeu, extra=_jogo_fim_recorde('invasores', pontos))",
     "        led_rgb(0, 0, 0)",
     "",
@@ -3759,18 +3852,25 @@ function flappyCode(): string {
     "    '...###..',",
     "]",
     "_flap_bater = False",
+    "_flap_seg = set()  # teclas seguradas (o app avisa quando solta: '-up' / '-space')",
+    "_FLAP_REPETE = 260  # segurando: bate as asas de novo a cada 260 ms",
     "",
     "def _flap_tecla(nome):",
     "    global _flap_bater, _jogo_tecla",
+    "    if nome[0] == '-':",
+    "        _flap_seg.discard(nome[1:])",
+    "        return",
     "    _jogo_tecla = True",
     "    _flap_bater = True",
+    "    _flap_seg.add(nome)",
     "",
-    "# botao (entre a porta e o 3,3 V) alem das teclas: cada aperto bate as asas uma vez",
-    "# (segurar nao fica batendo)",
+    "# botao (entre a porta e o 3,3 V) alem das teclas: cada aperto bate as asas na hora e,",
+    "# segurando, continua batendo (sobe enquanto segura, cai quando solta)",
     "def visor_flappy(pino):",
     "    global _flap_bater",
     "    _visor_garantir()",
-    "    for n in ('up', 'space'):",
+    "    _flap_seg.clear()",
+    "    for n in ('up', 'space', '-up', '-space'):",
     "        _teclas[n] = (lambda k: lambda: _flap_tecla(k))(n)",
     "    W, H = oled.width, oled.height",
     "    ave_a, aw, ah = _jogo_sprite(_PASS_A)",
@@ -3779,7 +3879,7 @@ function flappyCode(): string {
     "    VAO = 26 if H >= 64 else 16  # abertura entre os canos",
     "    ENTRE = 64  # distancia entre canos",
     "    X = 20      # posicao do passarinho",
-    "    botao = lambda: porta_ler(pino)",
+    "    botao = lambda: _jogo_ler(pino)",
     "    _jogo_esperar('FLAPPY', 'x sai do jogo', 'aperte uma tecla', mexeu=botao, extra='recorde %d' % _jogo_recorde('flappy'))",
     "    while _bb_rodando:",
     "        y = float(H // 2 - ah // 2)",
@@ -3793,6 +3893,7 @@ function flappyCode(): string {
     "        led_ate = None",
     "        _flap_bater = False",
     "        apertado = True  # o aperto que comecou o jogo nao conta como batida",
+    "        bateu = time.ticks_ms()  # ultima batida (segurando desde o titulo: espera um pouco)",
     "        vivo = True",
     "        antes = time.ticks_ms()",
     "        while vivo and _bb_rodando:",
@@ -3801,12 +3902,15 @@ function flappyCode(): string {
     "            agora = time.ticks_ms()",
     "            k = min(2.0, time.ticks_diff(agora, antes) / 50)",
     "            antes = agora",
-    "            b = porta_ler(pino)",
+    "            b = _jogo_ler(pino)",
     "            if b and not apertado:",
     "                _flap_bater = True",
     "            apertado = b",
+    "            if (b or _flap_seg) and time.ticks_diff(agora, bateu) >= _FLAP_REPETE:",
+    "                _flap_bater = True  # segurando: bate de novo",
     "            if _flap_bater:",
     "                _flap_bater = False",
+    "                bateu = agora",
     "                vy = -2.6  # batida de asa: sobe ~10 px (com a gravidade abaixo)",
     "            vy += 0.33 * k  # gravidade (menor = cai mais devagar)",
     "            y += vy * k",

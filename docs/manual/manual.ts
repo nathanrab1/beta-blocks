@@ -78,7 +78,7 @@ const TEXTOS: Record<string, string> = {
   game_speed: "Escolhe a velocidade dos jogos, de 1 (bem devagar) a 10 (bem rápido). Coloque antes do jogo.",
   oled_snake: "Jogo da cobrinha: coma as frutinhas sem bater na parede nem em você mesmo! Use as setas.",
   oled_dino: "O jogo do dinossauro: pule os cactos e abaixe dos pássaros, com botões ou com as setas.",
-  oled_flappy: "Jogo do passarinho: cada aperto bate as asas para passar entre os canos.",
+  oled_flappy: "Jogo do passarinho: cada aperto bate as asas para passar entre os canos; segurando, ele continua subindo.",
   oled_breakout: "Quebre todos os tijolos com a bolinha, controlando a raquete com o potenciômetro.",
   oled_pong_cpu: "Pong contra a máquina: escolha a dificuldade de 1 (fácil) a 5 (difícil).",
   oled_pong_2: "Pong para dois jogadores, cada um com seu potenciômetro.",
